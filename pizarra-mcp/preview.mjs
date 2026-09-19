@@ -1,4 +1,11 @@
 import { Resvg } from "@resvg/resvg-js";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const FONT_FILE = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../packages/excalidraw/fonts/Liberation/LiberationSans-Regular.woff2",
+);
 
 const xml = (value) =>
   String(value ?? "")
@@ -169,7 +176,7 @@ const textSvg = (element) => {
         }">${xml(line)}</tspan>`,
     )
     .join("");
-  return `<text text-anchor="${anchor}" font-family="Arial, sans-serif" font-size="${fontSize}" font-weight="${
+  return `<text text-anchor="${anchor}" font-family="Liberation Sans" font-size="${fontSize}" font-weight="${
     fontSize >= 28 ? 600 : 400
   }" fill="${color}" opacity="${opacity}">${tspans}</text>`;
 };
@@ -211,7 +218,11 @@ export const renderScenePng = (scene, options = {}) => {
   const rendered = new Resvg(svg, {
     fitTo: { mode: "width", value: maxWidth },
     background: scene?.appState?.viewBackgroundColor || "#ffffff",
-    font: { loadSystemFonts: true, defaultFontFamily: "Arial" },
+    font: {
+      fontFiles: [FONT_FILE],
+      loadSystemFonts: false,
+      defaultFontFamily: "Liberation Sans",
+    },
   }).render();
   return {
     png: Buffer.from(rendered.asPng()),
