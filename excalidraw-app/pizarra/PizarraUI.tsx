@@ -1,16 +1,18 @@
 import { Sidebar } from "@excalidraw/excalidraw";
 import ConfirmDialog from "@excalidraw/excalidraw/components/ConfirmDialog";
 import {
+  chevronRight,
   LibraryIcon,
   pencilIcon,
   PlusIcon,
   TrashIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import clsx from "clsx";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useAtomValue } from "../app-jotai";
 
+import { ancestrosDe, descendientesDe, hijosDe, rutaDe } from "./api";
 import { pizarra, pizarraAtom, SIDEBAR_PIZARRA } from "./pizarra";
 
 import "./pizarra.scss";
@@ -104,76 +106,154 @@ type Borrado =
   | { tipo: "proyecto"; proyecto: Proyecto }
   | { tipo: "hoja"; hoja: Hoja };
 
-const FilaHoja = ({
+/**
+ * Una hoja del árbol: su fila + (si está expandida) sus sub-hojas, recursivo.
+ * El nivel de anidamiento se pasa como variable CSS para la indentación.
+ */
+const NodoHoja = ({
   hoja,
-  activa,
-  primera,
-  ultima,
+  hojas,
+  nivel,
+  expandido,
+  onAlternar,
+  onExpandir,
   onBorrar,
 }: {
   hoja: Hoja;
-  activa: boolean;
-  primera: boolean;
-  ultima: boolean;
-  onBorrar: () => void;
+  hojas: Hoja[];
+  nivel: number;
+  expandido: Set<string>;
+  onAlternar: (id: string) => void;
+  onExpandir: (id: string) => void;
+  onBorrar: (hoja: Hoja) => void;
 }) => {
-  const { proyectoId } = useAtomValue(pizarraAtom);
+  const { proyectoId, hojaId } = useAtomValue(pizarraAtom);
   const [editando, setEditando] = useState(false);
-  if (editando) {
-    return (
-      <div className="pizarra-fila pizarra-fila--hoja">
-        <CampoNombre
-          inicial={hoja.nombre}
-          placeholder="Nombre de la hoja"
-          onListo={(nombre) => {
-            setEditando(false);
-            if (nombre) {
-              pizarra.renombrarHoja(hoja.id, nombre);
-            }
-          }}
-        />
-      </div>
-    );
-  }
+  const [creandoHija, setCreandoHija] = useState(false);
+  const hijos = hijosDe(hojas, hoja.id);
+  const hermanas = hijosDe(hojas, hoja.padre);
+  const posicion = hermanas.findIndex((x) => x.id === hoja.id);
+  const primera = posicion === 0;
+  const ultima = posicion === hermanas.length - 1;
+  const abierta = expandido.has(hoja.id);
+
   return (
-    <div
-      className={clsx("pizarra-fila pizarra-fila--hoja", {
-        "pizarra-fila--activa": activa,
-      })}
-      onClick={() => pizarra.abrirHoja(proyectoId!, hoja.id)}
-      onDoubleClick={() => setEditando(true)}
-    >
-      <span className="pizarra-fila__nombre">{hoja.nombre}</span>
-      <span className="pizarra-fila__acciones">
-        {!primera && (
-          <BotonIcono
-            titulo="Subir"
-            icono="↑"
-            onClick={() => pizarra.moverHoja(hoja.id, -1)}
+    <>
+      {editando ? (
+        <div
+          className="pizarra-fila pizarra-fila--hoja"
+          style={{ "--pizarra-nivel": nivel } as React.CSSProperties}
+        >
+          <span className="pizarra-chevron pizarra-chevron--espaciador" />
+          <CampoNombre
+            inicial={hoja.nombre}
+            placeholder="Nombre de la hoja"
+            onListo={(nombre) => {
+              setEditando(false);
+              if (nombre) {
+                pizarra.renombrarHoja(hoja.id, nombre);
+              }
+            }}
           />
-        )}
-        {!ultima && (
-          <BotonIcono
-            titulo="Bajar"
-            icono="↓"
-            onClick={() => pizarra.moverHoja(hoja.id, 1)}
+        </div>
+      ) : (
+        <div
+          className={clsx("pizarra-fila pizarra-fila--hoja", {
+            "pizarra-fila--activa": hoja.id === hojaId,
+          })}
+          style={{ "--pizarra-nivel": nivel } as React.CSSProperties}
+          onClick={() => pizarra.abrirHoja(proyectoId!, hoja.id)}
+          onDoubleClick={() => setEditando(true)}
+        >
+          {hijos.length ? (
+            <button
+              type="button"
+              className={clsx("pizarra-chevron", {
+                "pizarra-chevron--abierto": abierta,
+              })}
+              title={abierta ? "Contraer sub-hojas" : "Expandir sub-hojas"}
+              aria-label={abierta ? "Contraer sub-hojas" : "Expandir sub-hojas"}
+              onClick={(event) => {
+                event.stopPropagation();
+                onAlternar(hoja.id);
+              }}
+            >
+              {chevronRight}
+            </button>
+          ) : (
+            <span className="pizarra-chevron pizarra-chevron--espaciador" />
+          )}
+          <span className="pizarra-fila__nombre">{hoja.nombre}</span>
+          <span className="pizarra-fila__acciones">
+            {!primera && (
+              <BotonIcono
+                titulo="Subir"
+                icono="↑"
+                onClick={() => pizarra.moverHoja(hoja.id, -1)}
+              />
+            )}
+            {!ultima && (
+              <BotonIcono
+                titulo="Bajar"
+                icono="↓"
+                onClick={() => pizarra.moverHoja(hoja.id, 1)}
+              />
+            )}
+            <BotonIcono
+              titulo="Agregar sub-hoja"
+              icono={PlusIcon}
+              onClick={() => {
+                onExpandir(hoja.id);
+                setCreandoHija(true);
+              }}
+            />
+            <BotonIcono
+              titulo="Renombrar"
+              icono={pencilIcon}
+              onClick={() => setEditando(true)}
+            />
+            {hojas.length > 1 && (
+              <BotonIcono
+                titulo="Borrar hoja"
+                icono={TrashIcon}
+                peligro
+                onClick={() => onBorrar(hoja)}
+              />
+            )}
+          </span>
+        </div>
+      )}
+      {creandoHija && (
+        <div
+          className="pizarra-fila pizarra-fila--hoja"
+          style={{ "--pizarra-nivel": nivel + 1 } as React.CSSProperties}
+        >
+          <span className="pizarra-chevron pizarra-chevron--espaciador" />
+          <CampoNombre
+            placeholder="Nombre de la sub-hoja"
+            onListo={(nombre) => {
+              setCreandoHija(false);
+              if (nombre) {
+                pizarra.crearHoja(nombre, hoja.id);
+              }
+            }}
           />
-        )}
-        <BotonIcono
-          titulo="Renombrar"
-          icono={pencilIcon}
-          onClick={() => setEditando(true)}
-        />
-        {!(primera && ultima) && (
-          <BotonIcono
-            titulo="Borrar hoja"
-            icono={TrashIcon}
-            peligro
-            onClick={onBorrar}
+        </div>
+      )}
+      {abierta &&
+        hijos.map((hijo) => (
+          <NodoHoja
+            key={hijo.id}
+            hoja={hijo}
+            hojas={hojas}
+            nivel={nivel + 1}
+            expandido={expandido}
+            onAlternar={onAlternar}
+            onExpandir={onExpandir}
+            onBorrar={onBorrar}
           />
-        )}
-      </span>
-    </div>
+        ))}
+    </>
   );
 };
 
@@ -188,6 +268,33 @@ const FilaProyecto = ({
   const [editando, setEditando] = useState(false);
   const [creandoHoja, setCreandoHoja] = useState(false);
   const abierto = proyecto.id === proyectoId;
+  const [expandido, setExpandido] = useState<Set<string>>(new Set());
+
+  // al entrar a la hoja (o cambiar de hoja dentro del proyecto), asegura que
+  // sus antecesoras estén expandidas para que siempre se vea dónde está
+  useEffect(() => {
+    if (!abierto || !hojaId) {
+      return;
+    }
+    const cadena = ancestrosDe(proyecto.hojas, hojaId);
+    if (cadena.some((id) => !expandido.has(id))) {
+      setExpandido((prev) => new Set([...prev, ...cadena]));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abierto, hojaId, proyecto.hojas]);
+
+  const alternar = (id: string) =>
+    setExpandido((prev) => {
+      const siguiente = new Set(prev);
+      if (siguiente.has(id)) {
+        siguiente.delete(id);
+      } else {
+        siguiente.add(id);
+      }
+      return siguiente;
+    });
+  const expandir = (id: string) =>
+    setExpandido((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
 
   return (
     <div
@@ -233,14 +340,16 @@ const FilaProyecto = ({
       )}
       {abierto && (
         <div className="pizarra-hojas-lista">
-          {proyecto.hojas.map((hoja, i) => (
-            <FilaHoja
+          {hijosDe(proyecto.hojas, null).map((hoja) => (
+            <NodoHoja
               key={hoja.id}
               hoja={hoja}
-              activa={hoja.id === hojaId}
-              primera={i === 0}
-              ultima={i === proyecto.hojas.length - 1}
-              onBorrar={() => onBorrar({ tipo: "hoja", hoja })}
+              hojas={proyecto.hojas}
+              nivel={0}
+              expandido={expandido}
+              onAlternar={alternar}
+              onExpandir={expandir}
+              onBorrar={(hoja) => onBorrar({ tipo: "hoja", hoja })}
             />
           ))}
           {creandoHoja ? (
@@ -361,7 +470,17 @@ export const PizarraSidebar = () => {
           <p>
             {borrado.tipo === "proyecto"
               ? `Se van a mover a la papelera de pc3 las ${borrado.proyecto.hojas.length} hojas del proyecto.`
-              : "La hoja se mueve a la papelera de pc3."}
+              : (() => {
+                  const dueño = proyectos.find((p) =>
+                    p.hojas.some((h) => h.id === borrado.hoja.id),
+                  );
+                  const sub = dueño
+                    ? descendientesDe(dueño.hojas, borrado.hoja.id).length
+                    : 0;
+                  return sub
+                    ? `Se van a mover a la papelera de pc3 la hoja y sus ${sub} sub-hojas.`
+                    : "La hoja se mueve a la papelera de pc3.";
+                })()}
           </p>
         </ConfirmDialog>
       )}
@@ -373,7 +492,8 @@ export const PizarraSidebar = () => {
 export const PizarraTrigger = ({ compacto }: { compacto: boolean }) => {
   const estado = useAtomValue(pizarraAtom);
   const proyecto = estado.proyectos.find((p) => p.id === estado.proyectoId);
-  const hoja = proyecto?.hojas.find((h) => h.id === estado.hojaId);
+  const ruta =
+    proyecto && estado.hojaId ? rutaDe(proyecto.hojas, estado.hojaId) : [];
   return (
     <Sidebar.Trigger
       name={SIDEBAR_PIZARRA}
@@ -387,7 +507,17 @@ export const PizarraTrigger = ({ compacto }: { compacto: boolean }) => {
             {proyecto.nombre} ›{" "}
           </span>
         )}
-        {hoja?.nombre ?? "…"}
+        {!ruta.length
+          ? "…"
+          : compacto
+          ? // en el celular alcanza con el nombre de la hoja actual
+            ruta.at(-1)!.nombre
+          : ruta.map((hoja, i) => (
+              <span key={hoja.id}>
+                {i > 0 && " › "}
+                {hoja.nombre}
+              </span>
+            ))}
       </span>
       <span
         className={clsx(
@@ -409,9 +539,14 @@ export const PizarraHojas = () => {
   if (!proyecto) {
     return null;
   }
+  // las pestañas solo muestran las hojas de primer nivel; si la hoja abierta
+  // es una sub-hoja, se resalta la pestaña de la que "cuelga"
+  const raizActiva = estado.hojaId
+    ? rutaDe(proyecto.hojas, estado.hojaId)[0]?.id
+    : null;
   return (
     <div className="pizarra-pestanas">
-      {proyecto.hojas.map((hoja) =>
+      {hijosDe(proyecto.hojas, null).map((hoja) =>
         editando === hoja.id ? (
           <CampoNombre
             key={hoja.id}
@@ -429,7 +564,7 @@ export const PizarraHojas = () => {
             key={hoja.id}
             type="button"
             className={clsx("pizarra-pestana", {
-              "pizarra-pestana--activa": hoja.id === estado.hojaId,
+              "pizarra-pestana--activa": hoja.id === raizActiva,
             })}
             title="Doble clic para renombrar"
             onClick={() => pizarra.abrirHoja(proyecto.id, hoja.id)}

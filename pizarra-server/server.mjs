@@ -1,11 +1,14 @@
 // Servidor de la pizarra: sirve la app compilada y guarda proyectos y hojas
-// en disco, cada hoja como un archivo .excalidraw estándar.
+// en disco, cada hoja como un archivo .excalidraw estándar. Las hojas forman
+// un árbol de profundidad libre: cada una tiene un `padre` (id de otra hoja
+// del mismo proyecto, o null si es de primer nivel).
 //
 // Estructura en DATA_DIR:
-//   <proyecto>/proyecto.json          { nombre, hojas: [{ id, nombre }], creado }
+//   <proyecto>/proyecto.json          { nombre, hojas: [{ id, nombre, padre }], creado }
 //   <proyecto>/<hoja>.excalidraw      escena de la hoja
 //   <proyecto>/.historial/<hoja>/     copias previas (como mucho una cada 10 min)
-//   .papelera/                        proyectos y hojas borrados
+//   .papelera/                        proyectos y hojas borrados (borrar una hoja
+//                                      con sub-hojas se lleva also todo su subárbol)
 //
 // La API pide iniciar sesión con la contraseña de DATA_DIR/.contrasena; sin
 // contraseña cargada responde 503 (salvo PIZARRA_SIN_AUTH=1, solo desarrollo).
@@ -374,7 +377,7 @@ export const crearAlmacen = (dataDir) => {
     return texto.endsWith("\n") ? texto : `${texto}\n`;
   };
 
-  const nuevaHoja = (p, meta, nombre, escena) => {
+  const nuevaHoja = (p, meta, nombre, escena, padre = null) => {
     const base = slug(nombre);
     let id = base;
     for (let n = 2; meta.hojas.some((x) => x.id === id); n++) {
@@ -384,8 +387,15 @@ export const crearAlmacen = (dataDir) => {
       archivoHoja(p, id),
       escena ? validarEscena(escena) : escenaVacia(),
     );
-    meta.hojas.push({ id, nombre });
-    return { id, nombre };
+    const hoja = { id, nombre, padre };
+    meta.hojas.push(hoja);
+    return hoja;
+  };
+
+  /** Ids de todas las sub-hojas de `h`, a cualquier profundidad. */
+  const descendientesDe = (meta, h) => {
+    const directos = meta.hojas.filter((x) => x.padre === h).map((x) => x.id);
+    return directos.flatMap((id) => [id, ...descendientesDe(meta, id)]);
   };
 
   return {
@@ -427,9 +437,12 @@ export const crearAlmacen = (dataDir) => {
       aPapelera(dirProyecto(p), p);
     },
 
-    crearHoja(p, nombre, escena) {
+    crearHoja(p, nombre, escena, padre = null) {
       const meta = leerMeta(p);
-      const hoja = nuevaHoja(p, meta, leerNombre(nombre), escena);
+      if (padre != null) {
+        hojaDe(meta, padre); // 404 si el padre no existe en este proyecto
+      }
+      const hoja = nuevaHoja(p, meta, leerNombre(nombre), escena, padre);
       guardarMeta(p, meta);
       return { proyecto: resumen(p, meta), hoja };
     },
@@ -459,14 +472,17 @@ export const crearAlmacen = (dataDir) => {
     borrarHoja(p, h) {
       const meta = leerMeta(p);
       hojaDe(meta, h);
-      if (meta.hojas.length === 1) {
+      const aBorrar = [h, ...descendientesDe(meta, h)];
+      if (meta.hojas.length - aBorrar.length < 1) {
         throw new HttpError(400, "Un proyecto necesita al menos una hoja");
       }
-      const archivo = archivoHoja(p, h);
-      if (fs.existsSync(archivo)) {
-        aPapelera(archivo, `${p}__${h}.excalidraw`);
+      for (const id of aBorrar) {
+        const archivo = archivoHoja(p, id);
+        if (fs.existsSync(archivo)) {
+          aPapelera(archivo, `${p}__${id}.excalidraw`);
+        }
       }
-      meta.hojas = meta.hojas.filter((x) => x.id !== h);
+      meta.hojas = meta.hojas.filter((x) => !aBorrar.includes(x.id));
       guardarMeta(p, meta);
       return resumen(p, meta);
     },
@@ -569,7 +585,7 @@ const manejarApi = async (req, res, almacen, segmentos) => {
     }
   } else if (sub === "hojas" && !h) {
     if (metodo === "POST") {
-      const { nombre, escena } = await leerJson(req);
+      const { nombre, escena, padre } = await leerJson(req);
       return responderJson(
         res,
         201,
@@ -577,6 +593,7 @@ const manejarApi = async (req, res, almacen, segmentos) => {
           p,
           nombre,
           escena === undefined ? undefined : JSON.stringify(escena, null, 2),
+          padre ?? null,
         ),
       );
     }

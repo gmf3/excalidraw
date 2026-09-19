@@ -75,8 +75,43 @@
   }
 
   .pizarra-fila--hoja {
-    margin-inline-start: 0.75rem;
+    // --pizarra-nivel lo pone cada NodoHoja según su profundidad en el árbol
+    margin-inline-start: calc(0.75rem + var(--pizarra-nivel, 0) * 1.1rem);
     font-size: 0.875rem;
+  }
+
+  .pizarra-chevron {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 1.1rem;
+    height: 1.1rem;
+    padding: 0;
+    border: none;
+    border-radius: var(--border-radius-md);
+    background: transparent;
+    color: var(--color-gray-60);
+    cursor: pointer;
+    transition: transform 0.1s;
+
+    svg {
+      width: 0.7rem;
+      height: 0.7rem;
+    }
+
+    &:hover {
+      background: var(--color-surface-high);
+    }
+  }
+
+  .pizarra-chevron--abierto {
+    transform: rotate(90deg);
+  }
+
+  .pizarra-chevron--espaciador {
+    visibility: hidden;
+    pointer-events: none;
   }
 
   .pizarra-fila--activa {

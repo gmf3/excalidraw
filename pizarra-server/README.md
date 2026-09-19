@@ -1,16 +1,18 @@
 # pizarra-server
 
-Excalidraw con **proyectos** y **hojas** (p. ej. `ChemovetGestión` → `Front`, `Back`, `DevOps`, `Pendientes`). Cada hoja se guarda como un archivo `.excalidraw` estándar en el servidor, así que se ve igual desde cualquier dispositivo y se puede editar a mano o con una IA.
+Excalidraw con **proyectos** y **hojas en árbol** (p. ej. `ChemovetGestión` → `Front`, `Back`, `DevOps`, `Pendientes`, y a su vez `Front` → `Componentes` → `Botón`, a cualquier profundidad). Cada hoja se guarda como un archivo `.excalidraw` estándar en el servidor, así que se ve igual desde cualquier dispositivo y se puede editar a mano o con una IA.
 
 ## Datos
 
 ```
 DATA_DIR/
-  <proyecto>/proyecto.json       nombre + orden de las hojas
+  <proyecto>/proyecto.json       nombre + hojas [{id, nombre, padre}]
   <proyecto>/<hoja>.excalidraw   la escena (JSON legible)
   <proyecto>/.historial/<hoja>/  copia previa, como mucho una cada 10 min (máx. 100)
   .papelera/                     lo borrado desde la app
 ```
+
+Cada hoja tiene un `padre` (el id de otra hoja del mismo proyecto, o `null` si es de primer nivel), así que las hojas forman un árbol de profundidad libre. Borrar una hoja borra en cascada todas sus sub-hojas.
 
 Si alguien edita el `.excalidraw` directamente, la app lo trae sola (revisa cada 20 s y al volver a la pestaña). Si justo había cambios sin guardar en el navegador, no se pisa nada: la versión del navegador queda como una hoja nueva `"<hoja> (conflicto HH:MM)"`.
 

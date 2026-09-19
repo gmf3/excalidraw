@@ -22,7 +22,13 @@ import type {
 import { appJotaiStore, atom } from "../app-jotai";
 import { importFromLocalStorage } from "../data/localStorage";
 
-import { api, cuandoPidaLogin, PizarraApiError } from "./api";
+import {
+  api,
+  cuandoPidaLogin,
+  descendientesDe,
+  hijosDe,
+  PizarraApiError,
+} from "./api";
 
 import type { Hoja, Proyecto } from "./api";
 
@@ -462,11 +468,14 @@ class Pizarra {
       hour12: false,
     });
     const nombre = `${this.hojaActual()?.nombre ?? h} (conflicto ${hora})`;
+    const padre =
+      this.proyectoActual()?.hojas.find((x) => x.id === h)?.padre ?? null;
     try {
       const { proyecto } = await api.crearHoja(
         p,
         nombre,
         JSON.parse(textoLocal),
+        padre,
       );
       this.reemplazarProyecto(proyecto);
       const servidor = await api.leerHoja(p, h);
@@ -626,10 +635,15 @@ class Pizarra {
     });
   }
 
-  crearHoja(nombre: string) {
+  crearHoja(nombre: string, padre: string | null = null) {
     const p = this.estado.proyectoId!;
     return this.hacer(async () => {
-      const { proyecto, hoja } = await api.crearHoja(p, nombre);
+      const { proyecto, hoja } = await api.crearHoja(
+        p,
+        nombre,
+        undefined,
+        padre,
+      );
       this.reemplazarProyecto(proyecto);
       await this.abrirHoja(p, hoja.id);
     });
@@ -649,35 +663,47 @@ class Pizarra {
     });
   }
 
+  /** Mueve `h` un lugar entre sus hermanas (misma hoja padre). */
   moverHoja(h: string, delta: -1 | 1) {
     const proyecto = this.proyectoActual();
-    if (!proyecto) {
+    const hoja = proyecto?.hojas.find((x) => x.id === h);
+    if (!proyecto || !hoja) {
+      return;
+    }
+    const hermanas = hijosDe(proyecto.hojas, hoja.padre);
+    const vecina = hermanas[hermanas.findIndex((x) => x.id === h) + delta];
+    if (!vecina) {
       return;
     }
     const ids = proyecto.hojas.map((x) => x.id);
-    const i = ids.indexOf(h);
-    const j = i + delta;
-    if (i < 0 || j < 0 || j >= ids.length) {
-      return;
-    }
-    [ids[i], ids[j]] = [ids[j], ids[i]];
+    const posA = ids.indexOf(h);
+    const posB = ids.indexOf(vecina.id);
+    [ids[posA], ids[posB]] = [ids[posB], ids[posA]];
     return this.hacer(async () => {
       this.reemplazarProyecto(await api.ordenarHojas(proyecto.id, ids));
     });
   }
 
+  /** Borra `h` y, en cascada, todas sus sub-hojas a cualquier profundidad. */
   borrarHoja(h: string) {
     const proyecto = this.proyectoActual();
-    if (!proyecto || proyecto.hojas.length < 2) {
+    if (!proyecto) {
+      return;
+    }
+    const afectadas = new Set([h, ...descendientesDe(proyecto.hojas, h)]);
+    if (proyecto.hojas.length - afectadas.size < 1) {
       this.avisar("Un proyecto necesita al menos una hoja.");
       return;
     }
     return this.hacer(async () => {
-      if (h === this.estado.hojaId) {
-        const i = proyecto.hojas.findIndex((x) => x.id === h);
-        const vecina = proyecto.hojas[i + 1] ?? proyecto.hojas[i - 1];
-        await this.abrirHoja(proyecto.id, vecina.id);
-        if (this.estado.hojaId === h) {
+      if (afectadas.has(this.estado.hojaId!)) {
+        // prioriza una hermana de la hoja borrada; si no hay, cualquier otra
+        const padre = proyecto.hojas.find((x) => x.id === h)?.padre ?? null;
+        const destino =
+          hijosDe(proyecto.hojas, padre).find((x) => !afectadas.has(x.id)) ??
+          proyecto.hojas.find((x) => !afectadas.has(x.id));
+        await this.abrirHoja(proyecto.id, destino!.id);
+        if (afectadas.has(this.estado.hojaId!)) {
           return;
         }
       }

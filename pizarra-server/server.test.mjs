@@ -162,6 +162,95 @@ describe("API sin auth", () => {
     assert.equal(fs.readdirSync(path.join(dataDir, ".papelera")).length, 1);
   });
 
+  test("hojas: árbol de sub-hojas a varios niveles", async () => {
+    const hojas = `${base}/api/proyectos/chemovetgestion/hojas`;
+
+    let res = await fetch(hojas, {
+      method: "POST",
+      body: JSON.stringify({ nombre: "Componentes", padre: "front" }),
+    });
+    assert.equal(res.status, 201);
+    const { hoja: componentes } = await res.json();
+    assert.equal(componentes.padre, "front");
+
+    res = await fetch(hojas, {
+      method: "POST",
+      body: JSON.stringify({ nombre: "Botón", padre: componentes.id }),
+    });
+    assert.equal(res.status, 201);
+    const { hoja: boton, proyecto } = await res.json();
+    assert.equal(boton.padre, "componentes");
+    assert.deepEqual(
+      proyecto.hojas.map((h) => [h.id, h.padre]),
+      [
+        ["pendientes", null],
+        ["front", null],
+        ["back", null],
+        ["devops", null],
+        ["componentes", "front"],
+        ["boton", "componentes"],
+      ],
+    );
+
+    res = await fetch(hojas, {
+      method: "POST",
+      body: JSON.stringify({ nombre: "Huérfana", padre: "no-existe" }),
+    });
+    assert.equal(res.status, 404);
+
+    // borrar "Componentes" se lleva en cascada a "Botón" (su sub-hoja),
+    // pero no toca a "front" ni al resto
+    res = await fetch(`${hojas}/componentes`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+    const idsRestantes = (await res.json()).hojas.map((h) => h.id);
+    assert.deepEqual(idsRestantes.sort(), [
+      "back",
+      "devops",
+      "front",
+      "pendientes",
+    ]);
+    const papelera = fs.readdirSync(path.join(dataDir, ".papelera"));
+    for (const id of ["componentes", "boton"]) {
+      assert.ok(
+        papelera.some((n) =>
+          n.startsWith(`chemovetgestion__${id}.excalidraw__`),
+        ),
+        `${id} no fue a la papelera`,
+      );
+    }
+  });
+
+  test("no borra si la cascada dejaría el proyecto sin hojas", async () => {
+    // servidor aparte: no debe figurar en el listado de "chemovetgestion"/"solo"
+    const { server: s, base: b } = await levantar({
+      dataDir: path.join(tmp, "data-arbol"),
+      sinAuth: true,
+    });
+    let res = await fetch(`${b}/api/proyectos`, {
+      method: "POST",
+      body: JSON.stringify({ nombre: "Arbolito" }),
+    });
+    const raiz = (await res.json()).hojas[0].id;
+    const hojas = `${b}/api/proyectos/arbolito/hojas`;
+    res = await fetch(hojas, {
+      method: "POST",
+      body: JSON.stringify({ nombre: "Hijo", padre: raiz }),
+    });
+    const { hoja: hijo } = await res.json();
+    res = await fetch(hojas, {
+      method: "POST",
+      body: JSON.stringify({ nombre: "Nieto", padre: hijo.id }),
+    });
+    assert.equal(res.status, 201);
+
+    res = await fetch(`${b}/api/proyectos/arbolito/hojas/${raiz}`, {
+      method: "DELETE",
+    });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /al menos una hoja/);
+    s.close();
+  });
+
   test("no se puede borrar la última hoja", async () => {
     await fetch(`${base}/api/proyectos`, {
       method: "POST",

@@ -1,6 +1,6 @@
 // Cliente de la API de pizarra-server (proyectos y hojas guardados en pc3).
 
-export type Hoja = { id: string; nombre: string };
+export type Hoja = { id: string; nombre: string; padre: string | null };
 
 export type Proyecto = {
   id: string;
@@ -8,6 +8,34 @@ export type Proyecto = {
   hojas: Hoja[];
   actualizado: string | null;
 };
+
+/** Hojas hijas directas de `padre` (null = de primer nivel), en su orden. */
+export const hijosDe = (hojas: Hoja[], padre: string | null) =>
+  hojas.filter((h) => h.padre === padre);
+
+/** Ids de todas las sub-hojas de `h`, a cualquier profundidad. */
+export const descendientesDe = (hojas: Hoja[], h: string): string[] => {
+  const directos = hijosDe(hojas, h).map((x) => x.id);
+  return directos.flatMap((id) => [id, ...descendientesDe(hojas, id)]);
+};
+
+/** Camino desde la raíz del árbol hasta `h` inclusive. */
+export const rutaDe = (hojas: Hoja[], h: string): Hoja[] => {
+  const mapa = new Map(hojas.map((x) => [x.id, x] as const));
+  const ruta: Hoja[] = [];
+  let actual = mapa.get(h);
+  while (actual) {
+    ruta.unshift(actual);
+    actual = actual.padre ? mapa.get(actual.padre) : undefined;
+  }
+  return ruta;
+};
+
+/** Ids de los padres de `h`, de la raíz hacia abajo (sin incluir `h`). */
+export const ancestrosDe = (hojas: Hoja[], h: string) =>
+  rutaDe(hojas, h)
+    .slice(0, -1)
+    .map((x) => x.id);
 
 export class PizarraApiError extends Error {
   constructor(public status: number, message: string, public etag?: string) {
@@ -96,11 +124,16 @@ export const api = {
     await pedir(rutaProyecto(p), { method: "DELETE" });
   },
 
-  crearHoja: async (p: string, nombre: string, escena?: unknown) =>
+  crearHoja: async (
+    p: string,
+    nombre: string,
+    escena?: unknown,
+    padre: string | null = null,
+  ) =>
     (
       await pedir<{ proyecto: Proyecto; hoja: Hoja }>(
         `${rutaProyecto(p)}/hojas`,
-        json("POST", { nombre, escena }),
+        json("POST", { nombre, escena, padre }),
       )
     ).datos!,
 
