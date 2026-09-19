@@ -1,11 +1,19 @@
 import { Resvg } from "@resvg/resvg-js";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const FONT_FILE = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../packages/excalidraw/fonts/Liberation/LiberationSans-Regular.woff2",
-);
+const FONT_FILE = [
+  process.env.PIZARRA_PREVIEW_FONT,
+  "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+  "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
+].find((candidate) => candidate && fs.existsSync(candidate));
+
+if (!FONT_FILE) {
+  throw new Error(
+    "No se encontro LiberationSans-Regular.ttf para renderizar previews",
+  );
+}
 
 const xml = (value) =>
   String(value ?? "")
