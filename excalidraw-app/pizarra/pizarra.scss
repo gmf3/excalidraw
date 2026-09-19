@@ -280,12 +280,16 @@
   }
 
   .pizarra-trigger__texto {
-    max-width: 16rem;
+    max-width: min(22rem, 48vw);
     // .sidebar-trigger usa line-height 0 (pensado solo para íconos)
     line-height: 1.2;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .pizarra-trigger__hoja {
+    font-weight: 600;
   }
 
   .pizarra-trigger__proyecto {
@@ -299,7 +303,7 @@
   }
 
   &.excalidraw--mobile .pizarra-trigger__texto {
-    max-width: 40vw;
+    max-width: 46vw;
   }
 
   // --- pestañas de hojas en el pie -------------------------------------------

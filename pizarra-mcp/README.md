@@ -14,6 +14,7 @@ Se inspira en [`excalidraw/excalidraw-mcp`](https://github.com/excalidraw/excali
 - `write_diagram`
 - `write_scene`
 - `rename_sheet`
+- `move_sheet` — baja una hoja bajo otra o la sube nuevamente a la raíz
 
 `write_diagram` recibe figuras abreviadas y las convierte a elementos Excalidraw editables. Los textos usan `\n` para saltos de línea; `<br>` se rechaza para impedir que aparezca como texto literal.
 

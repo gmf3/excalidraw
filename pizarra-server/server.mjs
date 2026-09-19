@@ -454,6 +454,23 @@ export const crearAlmacen = (dataDir) => {
       return resumen(p, meta);
     },
 
+    moverHoja(p, h, padre) {
+      const meta = leerMeta(p);
+      const hoja = hojaDe(meta, h);
+      if (padre != null) {
+        hojaDe(meta, padre);
+        if (padre === h || descendientesDe(meta, h).includes(padre)) {
+          throw new HttpError(
+            400,
+            "Una hoja no puede quedar dentro de si misma ni de una sub-hoja",
+          );
+        }
+      }
+      hoja.padre = padre;
+      guardarMeta(p, meta);
+      return resumen(p, meta);
+    },
+
     ordenarHojas(p, ids) {
       const meta = leerMeta(p);
       const actuales = meta.hojas.map((x) => x.id);
@@ -622,8 +639,18 @@ const manejarApi = async (req, res, almacen, segmentos) => {
       return responderJson(res, 200, { etag }, { ETag: etag });
     }
     if (metodo === "PATCH") {
-      const { nombre } = await leerJson(req);
-      return responderJson(res, 200, almacen.renombrarHoja(p, h, nombre));
+      const cambios = await leerJson(req);
+      let proyecto;
+      if (Object.hasOwn(cambios, "nombre")) {
+        proyecto = almacen.renombrarHoja(p, h, cambios.nombre);
+      }
+      if (Object.hasOwn(cambios, "padre")) {
+        proyecto = almacen.moverHoja(p, h, cambios.padre ?? null);
+      }
+      if (!proyecto) {
+        throw new HttpError(400, "Falta nombre o padre");
+      }
+      return responderJson(res, 200, proyecto);
     }
     if (metodo === "DELETE") {
       return responderJson(res, 200, almacen.borrarHoja(p, h));

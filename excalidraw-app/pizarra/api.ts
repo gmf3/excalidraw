@@ -140,6 +140,9 @@ export const api = {
   renombrarHoja: async (p: string, h: string, nombre: string) =>
     (await pedir<Proyecto>(rutaHoja(p, h), json("PATCH", { nombre }))).datos!,
 
+  moverHoja: async (p: string, h: string, padre: string | null) =>
+    (await pedir<Proyecto>(rutaHoja(p, h), json("PATCH", { padre }))).datos!,
+
   ordenarHojas: async (p: string, hojas: string[]) =>
     (await pedir<Proyecto>(`${rutaProyecto(p)}/orden`, json("PUT", { hojas })))
       .datos!,

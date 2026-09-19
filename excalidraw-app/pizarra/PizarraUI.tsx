@@ -472,36 +472,37 @@ export const PizarraSidebar = () => {
   );
 };
 
-/** Botón de arriba a la derecha: proyecto y hoja actuales, abre el panel. */
+/** Título fijo arriba a la izquierda; también abre el panel. */
 export const PizarraTrigger = ({ compacto }: { compacto: boolean }) => {
   const estado = useAtomValue(pizarraAtom);
   const proyecto = estado.proyectos.find((p) => p.id === estado.proyectoId);
   const ruta =
     proyecto && estado.hojaId ? rutaDe(proyecto.hojas, estado.hojaId) : [];
+  const hojaActual = ruta.at(-1);
+  const rutaCompleta = [proyecto?.nombre, ...ruta.map((hoja) => hoja.nombre)]
+    .filter(Boolean)
+    .join(" › ");
   return (
     <Sidebar.Trigger
       name={SIDEBAR_PIZARRA}
-      title="Proyectos y hojas"
+      title={
+        rutaCompleta
+          ? `Abrir proyectos y hojas · ${rutaCompleta}`
+          : "Proyectos y hojas"
+      }
       icon={LibraryIcon}
       className="pizarra-trigger"
     >
       <span className="pizarra-trigger__texto">
-        {!compacto && proyecto && (
+        <span className="pizarra-trigger__hoja">
+          {hojaActual?.nombre ?? "…"}
+        </span>
+        {!compacto && proyecto && hojaActual && (
           <span className="pizarra-trigger__proyecto">
-            {proyecto.nombre} ›{" "}
+            {" · "}
+            {proyecto.nombre}
           </span>
         )}
-        {!ruta.length
-          ? "…"
-          : compacto
-          ? // en el celular alcanza con el nombre de la hoja actual
-            ruta.at(-1)!.nombre
-          : ruta.map((hoja, i) => (
-              <span key={hoja.id}>
-                {i > 0 && " › "}
-                {hoja.nombre}
-              </span>
-            ))}
       </span>
       <span
         className={clsx(

@@ -316,5 +316,38 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  "move_sheet",
+  {
+    description:
+      "Cambia el nivel de una hoja: parent=id la convierte en sub-hoja; parent=null la sube a la raiz. Rechaza ciclos.",
+    inputSchema: z.object({
+      project: z.string(),
+      sheet: z.string(),
+      parent: z.string().nullable(),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  async ({ project: projectId, sheet: sheetId, parent }) => {
+    try {
+      sheet(projectId, sheetId);
+      if (parent !== null) {
+        sheet(projectId, parent);
+      }
+      const result = almacen.moverHoja(projectId, sheetId, parent);
+      const moved = result.hojas.find((item) => item.id === sheetId);
+      const response = {
+        ok: true,
+        project: projectId,
+        sheet: moved,
+        url: urlFor(projectId, sheetId),
+      };
+      return textResult(response, response);
+    } catch (error) {
+      return fail(error);
+    }
+  },
+);
+
 const transport = new StdioServerTransport();
 await server.connect(transport);

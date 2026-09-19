@@ -31,6 +31,13 @@ test("MCP crea y lee una hoja persistente sin navegador", async (t) => {
 
   const listed = await client.listTools();
   assert(listed.tools.some((tool) => tool.name === "write_diagram"));
+  assert(listed.tools.some((tool) => tool.name === "move_sheet"));
+
+  const stack = await client.callTool({
+    name: "create_sheet",
+    arguments: { project: "oncovet-ia", name: "Stack" },
+  });
+  assert.equal(stack.isError, undefined);
 
   const created = await client.callTool({
     name: "create_sheet",
@@ -52,6 +59,20 @@ test("MCP crea y lee una hoja persistente sin navegador", async (t) => {
   });
   assert.equal(created.isError, undefined);
   assert.match(created.content[0].text, /"id": "front"/);
+
+  const moved = await client.callTool({
+    name: "move_sheet",
+    arguments: { project: "oncovet-ia", sheet: "front", parent: "stack" },
+  });
+  assert.equal(moved.isError, undefined);
+  assert.match(moved.content[0].text, /"padre": "stack"/);
+
+  const cycle = await client.callTool({
+    name: "move_sheet",
+    arguments: { project: "oncovet-ia", sheet: "stack", parent: "front" },
+  });
+  assert.equal(cycle.isError, true);
+  assert.match(cycle.content[0].text, /no puede quedar dentro/);
 
   const read = await client.callTool({
     name: "read_sheet",

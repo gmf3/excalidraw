@@ -192,6 +192,50 @@ describe("API sin auth", () => {
       ],
     );
 
+    res = await fetch(`${hojas}/boton`, {
+      method: "PATCH",
+      body: JSON.stringify({ padre: "front" }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(
+      (await res.json()).hojas.find((h) => h.id === "boton").padre,
+      "front",
+    );
+
+    res = await fetch(`${hojas}/boton`, {
+      method: "PATCH",
+      body: JSON.stringify({ padre: null }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(
+      (await res.json()).hojas.find((h) => h.id === "boton").padre,
+      null,
+    );
+
+    res = await fetch(`${hojas}/boton`, {
+      method: "PATCH",
+      body: JSON.stringify({ padre: "componentes" }),
+    });
+    assert.equal(res.status, 200);
+
+    res = await fetch(`${hojas}/componentes`, {
+      method: "PATCH",
+      body: JSON.stringify({ padre: "boton" }),
+    });
+    assert.equal(res.status, 400);
+
+    res = await fetch(`${hojas}/front`, {
+      method: "PATCH",
+      body: JSON.stringify({ padre: "front" }),
+    });
+    assert.equal(res.status, 400);
+
+    res = await fetch(`${hojas}/boton`, {
+      method: "PATCH",
+      body: JSON.stringify({ padre: "no-existe" }),
+    });
+    assert.equal(res.status, 404);
+
     res = await fetch(hojas, {
       method: "POST",
       body: JSON.stringify({ nombre: "Huérfana", padre: "no-existe" }),
