@@ -57,6 +57,7 @@ const baseElement = (type, spec) => ({
   isDeleted: false,
   boundElements: [],
   updated: Date.now(),
+  created: null,
   link: spec.link ?? null,
   locked: Boolean(spec.locked),
 });
@@ -72,14 +73,20 @@ const textMetrics = (text, fontSize) => {
   };
 };
 
-const textElement = (spec, container = null) => {
+const textElement = (spec, container = null, sharedGroup = null) => {
   const text = assertText(spec.text ?? spec.label, "text");
   const fontSize = Number(spec.fontSize) || 20;
   const measured = textMetrics(text, fontSize);
   const width = container
     ? Math.max(20, container.width - 20)
     : Number(spec.width) || measured.width;
-  const height = Number(spec.height) || measured.height;
+  const height = container
+    ? measured.height
+    : Number(spec.height) || measured.height;
+  const groupIds = [
+    ...(Array.isArray(spec.groupIds) ? spec.groupIds : []),
+    ...(sharedGroup ? [sharedGroup] : []),
+  ];
   const element = baseElement("text", {
     ...spec,
     x: container
@@ -90,6 +97,7 @@ const textElement = (spec, container = null) => {
       : assertNumber(spec.y, "text.y"),
     width,
     height,
+    groupIds,
     backgroundColor: "transparent",
     strokeWidth: spec.strokeWidth || 1,
     roughness: 0,
@@ -103,10 +111,11 @@ const textElement = (spec, container = null) => {
     fontFamily: Number(spec.fontFamily) || FONT_FAMILY,
     textAlign: spec.textAlign || (container ? "center" : "left"),
     verticalAlign: spec.verticalAlign || (container ? "middle" : "top"),
-    containerId: container?.id ?? null,
+    containerId: null,
     originalText: text,
-    autoResize: !container,
+    autoResize: true,
     lineHeight: Number(spec.lineHeight) || LINE_HEIGHT,
+    labelPosition: null,
   };
 };
 
@@ -176,22 +185,11 @@ const linearElement = (spec, shapes) => {
       [end.x - x, end.y - y],
     ],
     lastCommittedPoint: null,
-    startBinding: from
-      ? {
-          elementId: from.id,
-          focus: 0,
-          gap: Number(spec.gap) || 6,
-          fixedPoint: null,
-        }
-      : null,
-    endBinding: to
-      ? {
-          elementId: to.id,
-          focus: 0,
-          gap: Number(spec.gap) || 6,
-          fixedPoint: null,
-        }
-      : null,
+    // Quedan visualmente apoyadas en el borde, pero libres de bindings.
+    // Excalidraw normalizaba bindings incompletos al abrir la hoja y generaba
+    // falsos cambios locales que luego chocaban con la próxima escritura MCP.
+    startBinding: null,
+    endBinding: null,
     startArrowhead: spec.startArrowhead ?? null,
     endArrowhead:
       spec.endArrowhead === undefined
@@ -200,14 +198,8 @@ const linearElement = (spec, shapes) => {
           : null
         : spec.endArrowhead,
     elbowed: false,
+    moveMidPointsWithElement: false,
   };
-};
-
-const bind = (element, binding) => {
-  element.boundElements ||= [];
-  if (!element.boundElements.some((item) => item.id === binding.id)) {
-    element.boundElements.push(binding);
-  }
 };
 
 export const elementsFromSkeleton = (input) => {
@@ -226,14 +218,18 @@ export const elementsFromSkeleton = (input) => {
       if (shapes.has(shape.id)) {
         throw new Error(`Id duplicado: ${shape.id}`);
       }
+      const groupId = raw.label ? raw.groupId || `node-${shape.id}` : null;
+      if (groupId && !shape.groupIds.includes(groupId)) {
+        shape.groupIds.push(groupId);
+      }
       shapes.set(shape.id, shape);
       elements.push(shape);
       if (raw.label) {
         const label = textElement(
           { ...raw, id: raw.labelId || id(), text: raw.label },
           shape,
+          groupId,
         );
-        bind(shape, { type: "text", id: label.id });
         elements.push(label);
       }
     } else if (raw.type === "text") {
@@ -246,13 +242,11 @@ export const elementsFromSkeleton = (input) => {
       continue;
     }
     const linear = linearElement(raw, shapes);
+    const groupId = raw.label ? raw.groupId || `edge-${linear.id}` : null;
+    if (groupId && !linear.groupIds.includes(groupId)) {
+      linear.groupIds.push(groupId);
+    }
     elements.push(linear);
-    if (raw.from) {
-      bind(shapes.get(raw.from), { type: raw.type, id: linear.id });
-    }
-    if (raw.to) {
-      bind(shapes.get(raw.to), { type: raw.type, id: linear.id });
-    }
     if (raw.label) {
       const fontSize = Number(raw.fontSize) || 16;
       const metrics = textMetrics(raw.label, fontSize);
@@ -267,9 +261,8 @@ export const elementsFromSkeleton = (input) => {
         fontSize,
         textAlign: "center",
         verticalAlign: "middle",
+        groupIds: groupId ? [groupId] : [],
       });
-      label.containerId = linear.id;
-      bind(linear, { type: "text", id: label.id });
       elements.push(label);
     }
   }

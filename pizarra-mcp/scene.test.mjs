@@ -30,8 +30,20 @@ test("convierte figuras, labels y conexiones a elementos Excalidraw", () => {
   );
   assert.equal(elements.filter((element) => element.type === "text").length, 3);
   const arrow = elements.find((element) => element.type === "arrow");
-  assert.equal(arrow.startBinding.elementId, "web");
-  assert.equal(arrow.endBinding.elementId, "api");
+  assert.equal(arrow.startBinding, null);
+  assert.equal(arrow.endBinding, null);
+  const web = elements.find((element) => element.id === "web");
+  const webLabel = elements.find(
+    (element) => element.type === "text" && element.text.startsWith("Web"),
+  );
+  assert.equal(web.boundElements.length, 0);
+  assert.equal(webLabel.containerId, null);
+  assert.deepEqual(web.groupIds, webLabel.groupIds);
+  const arrowLabel = elements.find(
+    (element) => element.type === "text" && element.text === "HTTPS",
+  );
+  assert.equal(arrowLabel.containerId, null);
+  assert.deepEqual(arrow.groupIds, arrowLabel.groupIds);
   assert.equal(makeScene(elements).type, "excalidraw");
 });
 
