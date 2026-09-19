@@ -381,30 +381,14 @@ const FilaProyecto = ({
 
 export const PizarraSidebar = () => {
   const { proyectos } = useAtomValue(pizarraAtom);
-  const [docked, setDocked] = useState(() => {
-    try {
-      return localStorage.getItem("pizarra:panel-fijo") === "true";
-    } catch {
-      return false;
-    }
-  });
   const [creandoProyecto, setCreandoProyecto] = useState(false);
   const [borrado, setBorrado] = useState<Borrado | null>(null);
 
   return (
-    <Sidebar
-      name={SIDEBAR_PIZARRA}
-      docked={docked}
-      onDock={(fijo) => {
-        setDocked(fijo);
-        try {
-          localStorage.setItem("pizarra:panel-fijo", String(fijo));
-        } catch {
-          // preferencia de este navegador, no hace falta que persista
-        }
-      }}
-      className="pizarra-sidebar"
-    >
+    // sin `docked`: la lógica de reservar espacio de canvas al anclar es del
+    // sidebar derecho de Excalidraw; este se abre siempre como panel flotante
+    // sobre el canvas, desde la izquierda (ver .pizarra-sidebar en el scss)
+    <Sidebar name={SIDEBAR_PIZARRA} className="pizarra-sidebar">
       <Sidebar.Header>
         <div className="pizarra-sidebar__titulo">Proyectos</div>
       </Sidebar.Header>

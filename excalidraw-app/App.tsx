@@ -1042,11 +1042,11 @@ const ExcalidrawWrapper = () => {
         autoFocus={true}
         theme={editorTheme}
         onThemeChange={setAppTheme}
+        renderTopLeftUI={(isMobile) =>
+          PIZARRA_ENABLED ? <PizarraTrigger compacto={isMobile} /> : null
+        }
         renderTopRightUI={(isMobile) => {
-          if (PIZARRA_ENABLED) {
-            return <PizarraTrigger compacto={isMobile} />;
-          }
-          if (isMobile || !collabAPI || isCollabDisabled) {
+          if (PIZARRA_ENABLED || isMobile || !collabAPI || isCollabDisabled) {
             return null;
           }
 

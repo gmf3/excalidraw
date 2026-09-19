@@ -19,7 +19,7 @@ export const AppWelcomeScreen: React.FC<{
       <>
         Esta hoja se guarda sola en pc3.
         <br />
-        Cambiá de proyecto u hoja desde arriba a la derecha
+        Cambiá de proyecto u hoja desde arriba a la izquierda
         <br />o con las pestañas de abajo.
       </>
     );

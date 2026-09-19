@@ -1,7 +1,15 @@
 .excalidraw {
   // --- panel lateral ----------------------------------------------------------
 
+  // el Sidebar de Excalidraw nace pegado a la derecha; lo espejamos a la
+  // izquierda (mismo truco que usa la propia librería para RTL, pero sin
+  // depender de la dirección del documento)
   .pizarra-sidebar {
+    right: auto;
+    left: 0;
+    border-left: none;
+    border-right: 1px solid var(--sidebar-border-color);
+
     .pizarra-sidebar__titulo {
       font-weight: 600;
       font-size: 1rem;
@@ -261,7 +269,7 @@
     background: var(--color-danger);
   }
 
-  // --- botón de arriba a la derecha ------------------------------------------
+  // --- botón de arriba a la izquierda -----------------------------------------
 
   .pizarra-trigger .sidebar-trigger__label {
     display: flex;
