@@ -32,6 +32,7 @@ test("MCP crea y lee una hoja persistente sin navegador", async (t) => {
   const listed = await client.listTools();
   assert(listed.tools.some((tool) => tool.name === "write_diagram"));
   assert(listed.tools.some((tool) => tool.name === "move_sheet"));
+  assert(listed.tools.some((tool) => tool.name === "preview_sheet"));
 
   const stack = await client.callTool({
     name: "create_sheet",
@@ -80,6 +81,19 @@ test("MCP crea y lee una hoja persistente sin navegador", async (t) => {
   });
   assert.equal(read.isError, undefined);
   assert.match(read.content[0].text, /Web\\nvanilla JS/);
+
+  const preview = await client.callTool({
+    name: "preview_sheet",
+    arguments: { project: "oncovet-ia", sheet: "front", max_width: 800 },
+  });
+  assert.equal(preview.isError, undefined);
+  assert.equal(preview.content[0].type, "image");
+  assert.equal(preview.content[0].mimeType, "image/png");
+  assert.equal(
+    Buffer.from(preview.content[0].data, "base64").subarray(1, 4).toString(),
+    "PNG",
+  );
+  assert.equal(preview.structuredContent.width, 800);
   assert.equal(
     fs.existsSync(path.join(dataDir, "oncovet-ia", "front.excalidraw")),
     true,

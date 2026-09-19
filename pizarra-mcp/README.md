@@ -10,6 +10,7 @@ Se inspira en [`excalidraw/excalidraw-mcp`](https://github.com/excalidraw/excali
 - `list_projects`
 - `list_sheets`
 - `read_sheet`
+- `preview_sheet` — devuelve una vista PNG directamente al cliente MCP
 - `create_sheet`
 - `write_diagram`
 - `write_scene`

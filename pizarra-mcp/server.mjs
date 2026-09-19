@@ -7,6 +7,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { crearAlmacen } from "../pizarra-server/server.mjs";
 import { compactScene, elementsFromSkeleton, makeScene } from "./scene.mjs";
+import { renderScenePng } from "./preview.mjs";
 
 const DATA_DIR = path.resolve(process.env.PIZARRA_DATA_DIR || "./data");
 const PUBLIC_URL = (
@@ -14,7 +15,7 @@ const PUBLIC_URL = (
 ).replace(/\/$/, "");
 const almacen = crearAlmacen(DATA_DIR);
 
-const instructions = `Edita la Pizarra persistente de pc3 directamente; no uses el navegador. Antes de escribir, lista proyectos y hojas y lee la hoja destino. write_diagram acepta elementos abreviados de Excalidraw y protege las escrituras con ETag. Usa saltos de linea JSON \\n; nunca uses etiquetas <br>. Las operaciones reemplazan o amplian una hoja real y son visibles en https://pizarra.ultragfe.uk.`;
+const instructions = `Edita la Pizarra persistente de pc3 directamente; no uses el navegador. Antes de escribir, lista proyectos y hojas, lee la hoja destino y usa preview_sheet cuando necesites inspeccion visual. write_diagram acepta elementos abreviados de Excalidraw y protege las escrituras con ETag. Usa saltos de linea JSON \\n; nunca uses etiquetas <br>. Las operaciones reemplazan o amplian una hoja real y son visibles en https://pizarra.ultragfe.uk.`;
 
 const server = new McpServer(
   { name: "pizarra-pc3", version: "0.1.0" },
@@ -151,6 +152,47 @@ server.registerTool(
         scene: full ? scene : compactScene(scene),
       };
       return textResult(result, result);
+    } catch (error) {
+      return fail(error);
+    }
+  },
+);
+
+server.registerTool(
+  "preview_sheet",
+  {
+    description:
+      "Renderiza una hoja como PNG y la muestra directamente en la conversacion, sin abrir el navegador.",
+    inputSchema: z.object({
+      project: z.string(),
+      sheet: z.string(),
+      max_width: z.number().int().min(320).max(2000).optional().default(1400),
+    }),
+    annotations: { readOnlyHint: true },
+  },
+  async ({ project: projectId, sheet: sheetId, max_width: maxWidth }) => {
+    try {
+      const { scene, etag } = readScene(projectId, sheetId);
+      const preview = renderScenePng(scene, { maxWidth });
+      const metadata = {
+        project: projectId,
+        sheet: sheetId,
+        etag,
+        width: preview.width,
+        height: preview.height,
+        url: urlFor(projectId, sheetId),
+      };
+      return {
+        content: [
+          {
+            type: "image",
+            data: preview.png.toString("base64"),
+            mimeType: "image/png",
+          },
+          { type: "text", text: JSON.stringify(metadata, null, 2) },
+        ],
+        structuredContent: metadata,
+      };
     } catch (error) {
       return fail(error);
     }
