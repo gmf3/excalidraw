@@ -1,0 +1,40 @@
+# Pizarra MCP
+
+Servidor MCP por `stdio` para crear y editar proyectos/hojas de la Pizarra de pc3 sin automatizar el navegador. Usa el mismo almacenamiento y control de concurrencia (`ETag`) que `pizarra-server`.
+
+Se inspira en [`excalidraw/excalidraw-mcp`](https://github.com/excalidraw/excalidraw-mcp), pero persiste cada diagrama en una hoja real en lugar de crear un checkpoint temporal dentro del chat.
+
+## Herramientas
+
+- `read_me`
+- `list_projects`
+- `list_sheets`
+- `read_sheet`
+- `create_sheet`
+- `write_diagram`
+- `write_scene`
+- `rename_sheet`
+
+`write_diagram` recibe figuras abreviadas y las convierte a elementos Excalidraw editables. Los textos usan `\n` para saltos de línea; `<br>` se rechaza para impedir que aparezca como texto literal.
+
+## Ejecutar localmente
+
+```bash
+cd pizarra-mcp
+npm ci
+PIZARRA_DATA_DIR=../data node server.mjs
+```
+
+## Ejecutar contra pc3 mediante SSH
+
+El servidor se instala en `/home/efe-go/excalidraw/pizarra-mcp` y usa `/home/efe-go/pizarra-data`. La configuración recomendada de Codex es:
+
+```toml
+[mcp_servers.pizarra]
+command = "ssh"
+args = ["pc3", "env", "PIZARRA_DATA_DIR=/home/efe-go/pizarra-data", "PIZARRA_PUBLIC_URL=https://pizarra.ultragfe.uk", "node", "/home/efe-go/excalidraw/pizarra-mcp/server.mjs"]
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+```
+
+SSH proporciona autenticación y el MCP no expone un puerto adicional.

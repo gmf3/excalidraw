@@ -1,0 +1,15 @@
+{
+  "name": "pizarra-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP stdio para editar proyectos y hojas de Pizarra sin automatizacion del navegador",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.0.0"
+  }
+}
