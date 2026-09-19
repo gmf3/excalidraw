@@ -54,3 +54,16 @@ test("rechaza conexiones a ids inexistentes", () => {
     /from\/to no existe/,
   );
 });
+
+test("deja margen horizontal en títulos para no recortar la última letra", () => {
+  const [title] = elementsFromSkeleton([
+    {
+      type: "text",
+      x: 0,
+      y: 0,
+      fontSize: 32,
+      text: "ONCOVET IA · FRONTEND",
+    },
+  ]);
+  assert(title.width >= 440);
+});

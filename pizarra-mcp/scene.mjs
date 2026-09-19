@@ -64,7 +64,10 @@ const baseElement = (type, spec) => ({
 const textMetrics = (text, fontSize) => {
   const lines = text.split("\n");
   return {
-    width: Math.max(...lines.map((line) => line.length), 1) * fontSize * 0.58,
+    // Excalifont es más ancho que una sans promedio. El margen adicional evita
+    // que Excalidraw recorte la última letra de títulos y labels de flechas.
+    width:
+      Math.max(...lines.map((line) => line.length), 1) * fontSize * 0.65 + 8,
     height: lines.length * fontSize * LINE_HEIGHT,
   };
 };
