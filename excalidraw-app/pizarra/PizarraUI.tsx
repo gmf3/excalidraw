@@ -331,6 +331,13 @@ export const PizarraSidebar = () => {
       </div>
       <div className="pizarra-sidebar__pie">
         <EstadoDeGuardado />
+        <button
+          type="button"
+          className="pizarra-salir"
+          onClick={() => pizarra.cerrarSesion()}
+        >
+          Cerrar sesión
+        </button>
       </div>
       {borrado && (
         <ConfirmDialog
@@ -454,6 +461,67 @@ export const PizarraHojas = () => {
         </button>
       )}
       <EstadoDeGuardado />
+    </div>
+  );
+};
+
+/** Pantalla de contraseña: al abrir la pizarra o si la sesión venció. */
+export const PizarraLogin = ({ tema }: { tema: "light" | "dark" }) => {
+  const { necesitaLogin } = useAtomValue(pizarraAtom);
+  const [contrasena, setContrasena] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  if (!necesitaLogin) {
+    return null;
+  }
+  return (
+    <div
+      className={clsx("pizarra-login", {
+        "pizarra-login--oscuro": tema === "dark",
+      })}
+    >
+      <form
+        className="pizarra-login__caja"
+        onKeyDown={(event) => event.stopPropagation()}
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setEnviando(true);
+          setError(null);
+          try {
+            await pizarra.iniciarSesion(contrasena);
+            setContrasena("");
+          } catch (error: any) {
+            setError(error.message);
+          } finally {
+            setEnviando(false);
+          }
+        }}
+      >
+        <h1>Pizarra</h1>
+        <p>Ingresá la contraseña para ver tus proyectos.</p>
+        {/* para que el navegador pueda recordar la contraseña */}
+        <input
+          type="text"
+          name="username"
+          autoComplete="username"
+          value="pizarra"
+          readOnly
+          hidden
+        />
+        <input
+          type="password"
+          name="password"
+          autoComplete="current-password"
+          placeholder="Contraseña"
+          autoFocus
+          value={contrasena}
+          onChange={(event) => setContrasena(event.target.value)}
+        />
+        {error && <div className="pizarra-login__error">{error}</div>}
+        <button type="submit" disabled={enviando || !contrasena}>
+          {enviando ? "Entrando…" : "Entrar"}
+        </button>
+      </form>
     </div>
   );
 };

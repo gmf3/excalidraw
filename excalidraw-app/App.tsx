@@ -149,7 +149,11 @@ import "./index.scss";
 import { ExcalidrawPlusPromoBanner } from "./components/ExcalidrawPlusPromoBanner";
 import { AppSidebar } from "./components/AppSidebar";
 import { PIZARRA_ENABLED, pizarra } from "./pizarra/pizarra";
-import { PizarraSidebar, PizarraTrigger } from "./pizarra/PizarraUI";
+import {
+  PizarraLogin,
+  PizarraSidebar,
+  PizarraTrigger,
+} from "./pizarra/PizarraUI";
 
 import type { CollabAPI } from "./collab/Collab";
 
@@ -990,6 +994,7 @@ const ExcalidrawWrapper = () => {
         "is-collaborating": isCollaborating,
       })}
     >
+      {PIZARRA_ENABLED && <PizarraLogin tema={editorTheme} />}
       <Excalidraw
         viewportStatusFrame={viewportStatusFrame}
         userToFollow={userToFollow}

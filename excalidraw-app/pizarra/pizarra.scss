@@ -18,8 +18,29 @@
     }
 
     .pizarra-sidebar__pie {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
       padding: 0.5rem 1rem 0.75rem;
       border-top: 1px solid var(--default-border-color);
+    }
+
+    .pizarra-salir {
+      flex: none;
+      padding: 0.25rem 0.5rem;
+      border: none;
+      border-radius: var(--border-radius-md);
+      background: transparent;
+      color: var(--color-gray-60);
+      font: inherit;
+      font-size: 0.75rem;
+      cursor: pointer;
+
+      &:hover {
+        background: var(--button-hover-bg);
+        color: var(--text-primary-color);
+      }
     }
   }
 
@@ -318,4 +339,102 @@
     padding: 0 0.5rem;
     color: var(--color-gray-60);
   }
+}
+
+// --- login (fuera de .excalidraw: tapa la app mientras carga) -------------------
+
+.pizarra-login {
+  --login-fondo: #f5f5f9;
+  --login-caja: #ffffff;
+  --login-texto: #1b1b1f;
+  --login-suave: #6b6b76;
+  --login-borde: #d9d9e3;
+  --login-acento: #6965db;
+  --login-error: #c92a2a;
+
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: var(--login-fondo);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  &--oscuro {
+    --login-fondo: #121212;
+    --login-caja: #232329;
+    --login-texto: #e3e3e8;
+    --login-suave: #a0a0ad;
+    --login-borde: #3d3d45;
+    --login-acento: #a8a5ff;
+    --login-error: #ff8787;
+  }
+}
+
+.pizarra-login__caja {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 22rem;
+  padding: 1.75rem;
+  border-radius: 0.75rem;
+  background: var(--login-caja);
+  color: var(--login-texto);
+  box-shadow: 0 8px 30px rgb(0 0 0 / 12%);
+
+  h1 {
+    margin: 0;
+    font-size: 1.5rem;
+  }
+
+  p {
+    margin: 0 0 0.25rem;
+    color: var(--login-suave);
+    font-size: 0.9rem;
+  }
+
+  input {
+    height: 2.75rem;
+    padding: 0 0.75rem;
+    border: 1px solid var(--login-borde);
+    border-radius: 0.5rem;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 1rem;
+
+    &:focus {
+      outline: 2px solid var(--login-acento);
+      outline-offset: -1px;
+      border-color: transparent;
+    }
+  }
+
+  button {
+    height: 2.75rem;
+    border: none;
+    border-radius: 0.5rem;
+    background: var(--login-acento);
+    color: #fff;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+  }
+}
+
+.pizarra-login--oscuro .pizarra-login__caja button {
+  color: #121212;
+}
+
+.pizarra-login__error {
+  color: var(--login-error);
+  font-size: 0.875rem;
 }

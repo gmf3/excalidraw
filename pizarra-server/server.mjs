@@ -7,8 +7,11 @@
 //   <proyecto>/.historial/<hoja>/     copias previas (como mucho una cada 10 min)
 //   .papelera/                        proyectos y hojas borrados
 //
-// La API exige un JWT válido de Cloudflare Access; sin configurarlo responde
-// 503 (salvo PIZARRA_SIN_AUTH=1, pensado solo para desarrollo local).
+// La API pide iniciar sesión con la contraseña de DATA_DIR/.contrasena; sin
+// contraseña cargada responde 503 (salvo PIZARRA_SIN_AUTH=1, solo desarrollo).
+// La app en sí es pública: es el mismo código abierto de Excalidraw.
+//
+// Cargar o cambiar la contraseña:  node server.mjs contrasena
 
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -91,88 +94,181 @@ const leerNombre = (valor) => {
   return nombre;
 };
 
-// --- Cloudflare Access -------------------------------------------------------
+// --- Contraseña y sesión -----------------------------------------------------
+//
+// Una sola contraseña, guardada como hash scrypt en DATA_DIR/.contrasena
+// (se carga con `node server.mjs contrasena`). La sesión es una cookie firmada
+// con HMAC que dura 30 días; la clave de firma depende del hash, así que
+// cambiar la contraseña cierra todas las sesiones abiertas.
 
-export const crearVerificadorAccess = ({
-  teamDomain,
-  aud,
-  fetchImpl = fetch,
-}) => {
-  let claves = new Map();
-  let cargadasEn = 0;
+const COOKIE_SESION = "pizarra_sesion";
+const SESION_MS = 30 * 24 * 3600 * 1000;
+const SCRYPT = { N: 16384, r: 8, p: 1 };
+const VENTANA_INTENTOS_MS = 15 * 60 * 1000;
+const MAX_FALLIDOS_POR_IP = 5;
+const MAX_FALLIDOS_TOTAL = 30;
 
-  const cargarClaves = async () => {
-    cargadasEn = Date.now();
-    const res = await fetchImpl(`https://${teamDomain}/cdn-cgi/access/certs`);
-    if (!res.ok) {
-      throw new Error(`certs de Access: HTTP ${res.status}`);
-    }
-    const { keys } = await res.json();
-    claves = new Map(
-      keys.map((jwk) => [
-        jwk.kid,
-        crypto.createPublicKey({ key: jwk, format: "jwk" }),
-      ]),
-    );
-  };
+const scrypt = (clave, sal, largo, opciones) =>
+  new Promise((resolve, reject) =>
+    crypto.scrypt(clave, sal, largo, opciones, (error, hash) =>
+      error ? reject(error) : resolve(hash),
+    ),
+  );
 
-  return async (token) => {
-    const partes = String(token || "").split(".");
-    if (partes.length !== 3) {
-      return null;
-    }
-    const [h, p, firma] = partes;
-    let header;
-    let payload;
+export const hashContrasena = async (contrasena) => {
+  const sal = crypto.randomBytes(16);
+  const hash = await scrypt(contrasena.normalize("NFC"), sal, 32, SCRYPT);
+  return [
+    "scrypt",
+    SCRYPT.N,
+    SCRYPT.r,
+    SCRYPT.p,
+    sal.toString("base64url"),
+    hash.toString("base64url"),
+  ].join("$");
+};
+
+const coincideContrasena = async (contrasena, guardado) => {
+  const [alg, N, r, p, sal, hash] = guardado.split("$");
+  if (alg !== "scrypt" || !sal || !hash) {
+    return false;
+  }
+  const esperado = Buffer.from(hash, "base64url");
+  const obtenido = await scrypt(
+    contrasena.normalize("NFC"),
+    Buffer.from(sal, "base64url"),
+    esperado.length,
+    { N: Number(N), r: Number(r), p: Number(p) },
+  );
+  return crypto.timingSafeEqual(esperado, obtenido);
+};
+
+const leerCookie = (req, nombre) => {
+  const match = (req.headers.cookie || "").match(
+    new RegExp(`(?:^|;\\s*)${nombre}=([^;]+)`),
+  );
+  return match ? match[1] : null;
+};
+
+const ipDe = (req) =>
+  req.headers["cf-connecting-ip"] || req.socket.remoteAddress || "?";
+
+const esHttps = (req) =>
+  req.headers["x-forwarded-proto"] === "https" ||
+  /"scheme":"https"/.test(req.headers["cf-visitor"] || "");
+
+export const crearAuth = (dataDir) => {
+  fs.mkdirSync(dataDir, { recursive: true });
+  const archivoContrasena = path.join(dataDir, ".contrasena");
+  const archivoSecreto = path.join(dataDir, ".secreto-sesion");
+  if (!fs.existsSync(archivoSecreto)) {
+    fs.writeFileSync(archivoSecreto, crypto.randomBytes(32).toString("hex"), {
+      mode: 0o600,
+    });
+  }
+  const secreto = fs.readFileSync(archivoSecreto, "utf8").trim();
+
+  const hashActual = () => {
     try {
-      header = JSON.parse(Buffer.from(h, "base64url").toString());
-      payload = JSON.parse(Buffer.from(p, "base64url").toString());
+      return fs.readFileSync(archivoContrasena, "utf8").trim() || null;
     } catch {
       return null;
     }
-    if (header.alg !== "RS256") {
-      return null;
-    }
-    // recargar cada hora, o ante un kid desconocido (como mucho una vez por minuto)
-    const edad = Date.now() - cargadasEn;
-    if (edad > 3600_000 || (!claves.has(header.kid) && edad > 60_000)) {
-      await cargarClaves();
-    }
-    const clave = claves.get(header.kid);
-    if (!clave) {
-      return null;
-    }
-    const valida = crypto.verify(
-      "RSA-SHA256",
-      Buffer.from(`${h}.${p}`),
-      clave,
-      Buffer.from(firma, "base64url"),
-    );
-    if (!valida) {
-      return null;
-    }
-    const auds = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-    if (!auds.includes(aud)) {
-      return null;
-    }
-    if (typeof payload.exp !== "number" || payload.exp * 1000 < Date.now()) {
-      return null;
-    }
-    if (payload.iss !== `https://${teamDomain}`) {
-      return null;
-    }
-    return { email: payload.email || null };
   };
-};
+  const firmar = (dato, hash) =>
+    crypto
+      .createHmac(
+        "sha256",
+        crypto.createHmac("sha256", secreto).update(hash).digest(),
+      )
+      .update(dato)
+      .digest("base64url");
 
-const tokenDeAccess = (req) => {
-  const header = req.headers["cf-access-jwt-assertion"];
-  if (header) {
-    return header;
-  }
-  const cookie = req.headers.cookie || "";
-  const match = cookie.match(/(?:^|;\s*)CF_Authorization=([^;]+)/);
-  return match ? match[1] : null;
+  let fallidos = [];
+  const fallidosRecientes = () => {
+    const desde = Date.now() - VENTANA_INTENTOS_MS;
+    fallidos = fallidos.filter((f) => f.cuando > desde);
+    return fallidos;
+  };
+
+  const cookie = (req, valor, maxAgeMs) =>
+    `${COOKIE_SESION}=${valor}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(
+      maxAgeMs / 1000,
+    )}${esHttps(req) ? "; Secure" : ""}`;
+
+  return {
+    configurada: () => hashActual() !== null,
+
+    sesionValida(req) {
+      const hash = hashActual();
+      const valor = leerCookie(req, COOKIE_SESION);
+      if (!hash || !valor) {
+        return false;
+      }
+      const [dato, firma] = valor.split(".");
+      if (!dato || !firma) {
+        return false;
+      }
+      const esperada = Buffer.from(firmar(dato, hash));
+      const recibida = Buffer.from(firma);
+      if (
+        esperada.length !== recibida.length ||
+        !crypto.timingSafeEqual(esperada, recibida)
+      ) {
+        return false;
+      }
+      try {
+        const { exp } = JSON.parse(Buffer.from(dato, "base64url").toString());
+        return typeof exp === "number" && exp > Date.now();
+      } catch {
+        return false;
+      }
+    },
+
+    /** Devuelve el Set-Cookie de la sesión nueva. */
+    async entrar(req, contrasena) {
+      const hash = hashActual();
+      if (!hash) {
+        throw new HttpError(503, "Falta configurar la contraseña");
+      }
+      const ip = ipDe(req);
+      const recientes = fallidosRecientes();
+      if (
+        recientes.filter((f) => f.ip === ip).length >= MAX_FALLIDOS_POR_IP ||
+        recientes.length >= MAX_FALLIDOS_TOTAL
+      ) {
+        const minutos = Math.ceil(
+          (recientes[0].cuando + VENTANA_INTENTOS_MS - Date.now()) / 60000,
+        );
+        throw new HttpError(
+          429,
+          `Demasiados intentos fallidos. Probá de nuevo en ${minutos} min.`,
+        );
+      }
+      if (
+        typeof contrasena !== "string" ||
+        !(await coincideContrasena(contrasena, hash))
+      ) {
+        fallidos.push({ ip, cuando: Date.now() });
+        throw new HttpError(401, "Contraseña incorrecta");
+      }
+      fallidos = fallidos.filter((f) => f.ip !== ip);
+      const dato = Buffer.from(
+        JSON.stringify({ exp: Date.now() + SESION_MS }),
+      ).toString("base64url");
+      return cookie(req, `${dato}.${firmar(dato, hash)}`, SESION_MS);
+    },
+
+    salir: (req) => cookie(req, "", 0),
+
+    async cambiarContrasena(contrasena) {
+      escribirAtomico(
+        archivoContrasena,
+        `${await hashContrasena(contrasena)}\n`,
+      );
+      fs.chmodSync(archivoContrasena, 0o600);
+    },
+  };
 };
 
 // --- Almacenamiento ----------------------------------------------------------
@@ -407,14 +503,14 @@ export const crearAlmacen = (dataDir) => {
 
 // --- HTTP --------------------------------------------------------------------
 
-const leerCuerpo = (req) =>
+const leerCuerpo = (req, maximo = MAX_BODY) =>
   new Promise((resolve, reject) => {
     const partes = [];
     let total = 0;
     req.on("data", (parte) => {
       total += parte.length;
-      if (total > MAX_BODY) {
-        reject(new HttpError(413, "La escena supera los 50 MB"));
+      if (total > maximo) {
+        reject(new HttpError(413, "El pedido es demasiado grande"));
         req.destroy();
         return;
       }
@@ -424,8 +520,8 @@ const leerCuerpo = (req) =>
     req.on("error", reject);
   });
 
-const leerJson = async (req) => {
-  const texto = await leerCuerpo(req);
+const leerJson = async (req, maximo) => {
+  const texto = await leerCuerpo(req, maximo);
   try {
     return texto ? JSON.parse(texto) : {};
   } catch {
@@ -560,13 +656,34 @@ const servirEstatico = (req, res, staticDir) => {
   fs.createReadStream(archivo).pipe(res);
 };
 
-export const crearServidor = ({
-  staticDir,
-  dataDir,
-  verificar, // async (token) => usuario | null; null = Access sin configurar
-  sinAuth = false,
-}) => {
+const manejarSesion = async (req, res, auth, accion) => {
+  if (accion === "sesion" && req.method === "GET") {
+    if (!auth.sesionValida(req)) {
+      throw new HttpError(401, "Necesitás iniciar sesión", { login: true });
+    }
+    return responderJson(res, 200, { ok: true });
+  }
+  if (accion === "login" && req.method === "POST") {
+    const { contrasena } = await leerJson(req, 10_000);
+    const cookie = await auth.entrar(req, contrasena);
+    return responderJson(res, 200, { ok: true }, { "Set-Cookie": cookie });
+  }
+  if (accion === "logout" && req.method === "POST") {
+    return responderJson(
+      res,
+      200,
+      { ok: true },
+      { "Set-Cookie": auth.salir(req) },
+    );
+  }
+  throw new HttpError(405, "Método no permitido");
+};
+
+const ACCIONES_DE_SESION = new Set(["sesion", "login", "logout"]);
+
+export const crearServidor = ({ staticDir, dataDir, sinAuth = false }) => {
   const almacen = crearAlmacen(dataDir);
+  const auth = crearAuth(dataDir);
   const raizEstatica = path.resolve(staticDir);
 
   return http.createServer(async (req, res) => {
@@ -578,19 +695,20 @@ export const crearServidor = ({
     }
     try {
       if (!sinAuth) {
-        if (!verificar) {
+        if (!auth.configurada()) {
           throw new HttpError(
             503,
-            "Cloudflare Access no está configurado en el servidor",
+            "Falta configurar la contraseña (node server.mjs contrasena)",
           );
         }
-        const usuario = await verificar(tokenDeAccess(req));
-        if (!usuario) {
-          throw new HttpError(
-            401,
-            "Sesión de Cloudflare Access inválida o vencida",
-          );
+        if (ACCIONES_DE_SESION.has(segmentos[1]) && segmentos.length === 2) {
+          return await manejarSesion(req, res, auth, segmentos[1]);
         }
+        if (!auth.sesionValida(req)) {
+          throw new HttpError(401, "Necesitás iniciar sesión", { login: true });
+        }
+      } else if (segmentos[1] === "sesion") {
+        return responderJson(res, 200, { ok: true });
       }
       await manejarApi(req, res, almacen, segmentos);
     } catch (error) {
@@ -606,41 +724,98 @@ export const crearServidor = ({
   });
 };
 
+// --- Línea de comandos -------------------------------------------------------
+
+/** Lee una línea sin mostrarla (o de stdin si no es una terminal). */
+const leerOculto = (pregunta) =>
+  new Promise((resolve) => {
+    const { stdin, stdout } = process;
+    stdout.write(pregunta);
+    let valor = "";
+    if (!stdin.isTTY) {
+      // sin terminal (tests o scripts): una línea por pregunta
+      const alLeer = () => {
+        let parte;
+        while ((parte = stdin.read(1)) !== null) {
+          if (parte === "\n") {
+            stdin.off("readable", alLeer);
+            stdout.write("\n");
+            return resolve(valor);
+          }
+          valor += parte;
+        }
+      };
+      stdin.setEncoding("utf8");
+      stdin.on("readable", alLeer);
+      return alLeer();
+    }
+    stdin.setRawMode(true);
+    stdin.setEncoding("utf8");
+    stdin.resume();
+    const alTeclear = (teclas) => {
+      for (const tecla of teclas) {
+        if (tecla === "\r" || tecla === "\n") {
+          stdin.setRawMode(false);
+          stdin.pause();
+          stdin.off("data", alTeclear);
+          stdout.write("\n");
+          return resolve(valor);
+        }
+        if (tecla === "\u0003") {
+          stdout.write("\n");
+          process.exit(130);
+        }
+        valor = tecla === "\u007f" ? valor.slice(0, -1) : valor + tecla;
+      }
+    };
+    stdin.on("data", alTeclear);
+  });
+
+const comandoContrasena = async (dataDir) => {
+  const nueva = await leerOculto("Contraseña nueva: ");
+  if (nueva.length < 8) {
+    console.error("Tiene que tener al menos 8 caracteres.");
+    process.exit(1);
+  }
+  if ((await leerOculto("Repetila: ")) !== nueva) {
+    console.error("No coinciden.");
+    process.exit(1);
+  }
+  await crearAuth(dataDir).cambiarContrasena(nueva);
+  console.log(
+    "Listo. Las sesiones abiertas se cerraron; entrá de nuevo con la contraseña nueva.",
+  );
+  process.exit(0);
+};
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const {
     PORT = "8080",
     HOST = "0.0.0.0",
     STATIC_DIR = "./build",
     DATA_DIR = "./data",
-    CF_ACCESS_TEAM_DOMAIN,
-    CF_ACCESS_AUD,
     PIZARRA_SIN_AUTH,
   } = process.env;
-  const verificar =
-    CF_ACCESS_TEAM_DOMAIN && CF_ACCESS_AUD
-      ? crearVerificadorAccess({
-          teamDomain: CF_ACCESS_TEAM_DOMAIN,
-          aud: CF_ACCESS_AUD,
-        })
-      : null;
+  if (process.argv[2] === "contrasena") {
+    await comandoContrasena(DATA_DIR);
+  }
   const sinAuth = PIZARRA_SIN_AUTH === "1";
-  crearServidor({
-    staticDir: STATIC_DIR,
-    dataDir: DATA_DIR,
-    verificar,
-    sinAuth,
-  }).listen(Number(PORT), HOST, () => {
-    console.log(
-      `pizarra escuchando en ${HOST}:${PORT} (datos: ${path.resolve(
-        DATA_DIR,
-      )}, ` +
-        `auth: ${
+  crearServidor({ staticDir: STATIC_DIR, dataDir: DATA_DIR, sinAuth }).listen(
+    Number(PORT),
+    HOST,
+    () => {
+      const auth = crearAuth(DATA_DIR);
+      console.log(
+        `pizarra escuchando en ${HOST}:${PORT} (datos: ${path.resolve(
+          DATA_DIR,
+        )}, login: ${
           sinAuth
-            ? "DESACTIVADA"
-            : verificar
-            ? "Cloudflare Access"
-            : "sin configurar → API 503"
+            ? "DESACTIVADO"
+            : auth.configurada()
+            ? "con contraseña"
+            : "sin contraseña cargada → API 503"
         })`,
-    );
-  });
+      );
+    },
+  );
 }

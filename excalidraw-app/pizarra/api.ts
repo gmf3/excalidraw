@@ -15,6 +15,12 @@ export class PizarraApiError extends Error {
   }
 }
 
+/** Se llama cuando la sesión venció (o nunca se inició). */
+let alPedirLogin: () => void = () => {};
+export const cuandoPidaLogin = (callback: () => void) => {
+  alPedirLogin = callback;
+};
+
 const pedir = async <T>(ruta: string, init: RequestInit = {}) => {
   let res: Response;
   try {
@@ -24,12 +30,7 @@ const pedir = async <T>(ruta: string, init: RequestInit = {}) => {
       headers: { "Content-Type": "application/json", ...init.headers },
     });
   } catch {
-    // una sesión vencida de Cloudflare Access redirige al login de otro
-    // dominio y el fetch falla igual que sin red
-    throw new PizarraApiError(
-      0,
-      "No hay conexión con la pizarra. Si la sesión venció, recargá la página.",
-    );
+    throw new PizarraApiError(0, "No hay conexión con la pizarra en pc3.");
   }
   if (res.status === 304) {
     return { res, datos: null };
@@ -37,11 +38,14 @@ const pedir = async <T>(ruta: string, init: RequestInit = {}) => {
   if (!(res.headers.get("content-type") || "").includes("application/json")) {
     throw new PizarraApiError(
       res.status,
-      "La sesión de Cloudflare venció: recargá la página.",
+      `Respuesta inesperada del servidor (HTTP ${res.status}).`,
     );
   }
   const datos = await res.json();
   if (!res.ok) {
+    if (datos.login) {
+      alPedirLogin();
+    }
     throw new PizarraApiError(res.status, datos.error, datos.etag);
   }
   return { res, datos: datos as T };
@@ -57,6 +61,27 @@ const rutaHoja = (p: string, h: string) =>
   `${rutaProyecto(p)}/hojas/${encodeURIComponent(h)}`;
 
 export const api = {
+  /** false si hay que iniciar sesión */
+  haySesion: async () => {
+    try {
+      await pedir("/sesion");
+      return true;
+    } catch (error) {
+      if (error instanceof PizarraApiError && error.status === 401) {
+        return false;
+      }
+      throw error;
+    }
+  },
+
+  entrar: async (contrasena: string) => {
+    await pedir("/login", json("POST", { contrasena }));
+  },
+
+  salir: async () => {
+    await pedir("/logout", { method: "POST" });
+  },
+
   listar: async () =>
     (await pedir<{ proyectos: Proyecto[] }>("/proyectos")).datos!.proyectos,
 

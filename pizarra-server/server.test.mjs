@@ -5,7 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
 
-import { crearServidor, crearVerificadorAccess, slug } from "./server.mjs";
+import { execFileSync } from "node:child_process";
+
+import { crearAuth, crearServidor, slug } from "./server.mjs";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pizarra-test-"));
 const staticDir = path.join(tmp, "build");
@@ -204,95 +206,120 @@ describe("API sin auth", () => {
   });
 });
 
-describe("API con Cloudflare Access", () => {
-  const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", {
-    modulusLength: 2048,
-  });
-  const jwk = { ...publicKey.export({ format: "jwk" }), kid: "k1" };
-  const teamDomain = "equipo.cloudflareaccess.com";
-  const aud = "aud-pizarra";
-  const firmar = (payload, kid = "k1") => {
-    const h = Buffer.from(JSON.stringify({ alg: "RS256", kid })).toString(
-      "base64url",
-    );
-    const p = Buffer.from(JSON.stringify(payload)).toString("base64url");
-    const s = crypto.sign("RSA-SHA256", Buffer.from(`${h}.${p}`), privateKey);
-    return `${h}.${p}.${s.toString("base64url")}`;
-  };
-  const valido = {
-    aud: [aud],
-    iss: `https://${teamDomain}`,
-    exp: Math.floor(Date.now() / 1000) + 3600,
-    email: "yo@example.com",
-  };
-
+describe("API con contraseña", () => {
+  const dataDir = path.join(tmp, "data-auth");
   let server;
   let base;
+
   before(async () => {
-    const verificar = crearVerificadorAccess({
-      teamDomain,
-      aud,
-      fetchImpl: async (url) => {
-        assert.equal(url, `https://${teamDomain}/cdn-cgi/access/certs`);
-        return new Response(JSON.stringify({ keys: [jwk] }));
-      },
-    });
-    ({ server, base } = await levantar({
-      dataDir: path.join(tmp, "data-auth"),
-      verificar,
-    }));
+    await crearAuth(dataDir).cambiarContrasena("clave-larga-1");
+    ({ server, base } = await levantar({ dataDir }));
   });
   after(() => server.close());
 
-  const pedir = (token, porCookie = false) =>
+  const entrar = (contrasena, ip = "1.1.1.1") =>
+    fetch(`${base}/api/login`, {
+      method: "POST",
+      headers: { "CF-Connecting-IP": ip, "X-Forwarded-Proto": "https" },
+      body: JSON.stringify({ contrasena }),
+    });
+  const cookieDe = (res) => res.headers.get("set-cookie").split(";")[0];
+  const pedir = (cookie) =>
     fetch(`${base}/api/proyectos`, {
-      headers: token
-        ? porCookie
-          ? { Cookie: `otra=1; CF_Authorization=${token}` }
-          : { "Cf-Access-Jwt-Assertion": token }
-        : {},
+      headers: cookie ? { Cookie: cookie } : {},
     });
 
-  test("acepta un JWT válido por header o cookie", async () => {
-    assert.equal((await pedir(firmar(valido))).status, 200);
-    assert.equal((await pedir(firmar(valido), true)).status, 200);
+  test("sin sesión la API pide login pero la app se sirve igual", async () => {
+    const res = await pedir();
+    assert.equal(res.status, 401);
+    assert.equal((await res.json()).login, true);
+    assert.equal((await fetch(`${base}/api/sesion`)).status, 401);
+    assert.equal((await fetch(`${base}/`)).status, 200);
   });
 
-  test("rechaza sin token, aud o iss ajenos, vencido o mal firmado", async () => {
-    assert.equal((await pedir(null)).status, 401);
+  test("con la contraseña correcta queda una cookie de 30 días", async () => {
+    const res = await entrar("clave-larga-1");
+    assert.equal(res.status, 200);
+    const setCookie = res.headers.get("set-cookie");
+    assert.match(setCookie, /HttpOnly/);
+    assert.match(setCookie, /SameSite=Strict/);
+    assert.match(setCookie, /Secure/);
+    assert.match(setCookie, /Max-Age=2592000/);
+    const cookie = cookieDe(res);
+    assert.equal((await pedir(cookie)).status, 200);
     assert.equal(
-      (await pedir(firmar({ ...valido, aud: ["otra"] }))).status,
-      401,
+      (await fetch(`${base}/api/sesion`, { headers: { Cookie: cookie } }))
+        .status,
+      200,
     );
-    assert.equal(
-      (
-        await pedir(
-          firmar({ ...valido, iss: "https://otro.cloudflareaccess.com" }),
-        )
-      ).status,
-      401,
-    );
-    assert.equal(
-      (
-        await pedir(
-          firmar({ ...valido, exp: Math.floor(Date.now() / 1000) - 10 }),
-        )
-      ).status,
-      401,
-    );
-    const [h, p] = firmar(valido).split(".");
-    assert.equal((await pedir(`${h}.${p}.AAAA`)).status, 401);
-    assert.equal((await pedir(firmar(valido, "desconocido"))).status, 401);
   });
 
-  test("sin Access configurado la API responde 503", async () => {
+  test("rechaza contraseña incorrecta y cookies adulteradas", async () => {
+    assert.equal((await entrar("otra-cosa", "2.2.2.2")).status, 401);
+    const cookie = cookieDe(await entrar("clave-larga-1", "2.2.2.2"));
+    const [nombre, valor] = cookie.split("=");
+    const [dato, firma] = valor.split(".");
+    const otroDato = Buffer.from(
+      JSON.stringify({ exp: Date.now() + 1e12 }),
+    ).toString("base64url");
+    assert.equal((await pedir(`${nombre}=${otroDato}.${firma}`)).status, 401);
+    assert.equal((await pedir(`${nombre}=${dato}.AAAA`)).status, 401);
+  });
+
+  test("bloquea una IP tras 5 intentos fallidos", async () => {
+    for (let i = 0; i < 5; i++) {
+      assert.equal((await entrar("mal", "3.3.3.3")).status, 401);
+    }
+    const res = await entrar("clave-larga-1", "3.3.3.3");
+    assert.equal(res.status, 429);
+    assert.match((await res.json()).error, /Demasiados intentos/);
+    // otra IP sigue pudiendo entrar
+    assert.equal((await entrar("clave-larga-1", "4.4.4.4")).status, 200);
+  });
+
+  test("cambiar la contraseña cierra las sesiones abiertas", async () => {
+    const cookie = cookieDe(await entrar("clave-larga-1", "5.5.5.5"));
+    assert.equal((await pedir(cookie)).status, 200);
+    await crearAuth(dataDir).cambiarContrasena("clave-larga-2");
+    assert.equal((await pedir(cookie)).status, 401);
+    assert.equal((await entrar("clave-larga-2", "5.5.5.5")).status, 200);
+  });
+
+  test("logout borra la cookie", async () => {
+    const res = await fetch(`${base}/api/logout`, { method: "POST" });
+    assert.match(res.headers.get("set-cookie"), /Max-Age=0/);
+  });
+
+  test("sin contraseña cargada la API responde 503", async () => {
     const { server: s, base: b } = await levantar({
       dataDir: path.join(tmp, "data-503"),
     });
-    const res = await fetch(`${b}/api/proyectos`);
-    assert.equal(res.status, 503);
-    // la app en sí se sigue sirviendo
+    assert.equal((await fetch(`${b}/api/proyectos`)).status, 503);
+    assert.equal(
+      (await fetch(`${b}/api/login`, { method: "POST" })).status,
+      503,
+    );
     assert.equal((await fetch(`${b}/`)).status, 200);
     s.close();
+  });
+
+  test("el comando `contrasena` guarda el hash, no el texto", () => {
+    const dir = path.join(tmp, "data-cli");
+    const salida = execFileSync(
+      process.execPath,
+      [path.join(import.meta.dirname, "server.mjs"), "contrasena"],
+      {
+        env: { ...process.env, DATA_DIR: dir },
+        input: "secreta-123\nsecreta-123\n",
+      },
+    ).toString();
+    assert.match(salida, /Listo/);
+    const guardado = fs.readFileSync(path.join(dir, ".contrasena"), "utf8");
+    assert.match(guardado, /^scrypt\$/);
+    assert.doesNotMatch(guardado, /secreta-123/);
+    assert.equal(
+      fs.statSync(path.join(dir, ".contrasena")).mode & 0o777,
+      0o600,
+    );
   });
 });

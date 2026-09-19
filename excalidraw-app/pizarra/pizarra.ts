@@ -20,8 +20,9 @@ import type {
 } from "@excalidraw/excalidraw/types";
 
 import { appJotaiStore, atom } from "../app-jotai";
+import { importFromLocalStorage } from "../data/localStorage";
 
-import { api, PizarraApiError } from "./api";
+import { api, cuandoPidaLogin, PizarraApiError } from "./api";
 
 import type { Hoja, Proyecto } from "./api";
 
@@ -42,6 +43,7 @@ export type EstadoPizarra = {
   hojaId: string | null;
   guardado: EstadoGuardado;
   error: string | null;
+  necesitaLogin: boolean;
 };
 
 export const pizarraAtom = atom<EstadoPizarra>({
@@ -50,6 +52,7 @@ export const pizarraAtom = atom<EstadoPizarra>({
   hojaId: null,
   guardado: "cargando",
   error: null,
+  necesitaLogin: false,
 });
 
 const GUARDAR_TRAS_MS = 800;
@@ -65,6 +68,7 @@ type Fondo = Pick<
 const claveVista = (p: string, h: string) => `pizarra:vista:${p}/${h}`;
 const claveUltimaHoja = (p: string) => `pizarra:hoja:${p}`;
 const CLAVE_ULTIMO_PROYECTO = "pizarra:proyecto";
+const CLAVE_RESCATADO = "pizarra:rescatado";
 
 const leerLocal = <T>(clave: string): T | null => {
   try {
@@ -103,6 +107,11 @@ class Pizarra {
   private timerReintento: ReturnType<typeof setTimeout> | null = null;
   private turno = 0;
   private inicio: Promise<ExcalidrawInitialDataState> | null = null;
+  private alEntrar: (() => void) | null = null;
+
+  constructor() {
+    cuandoPidaLogin(() => this.actualizar({ necesitaLogin: true }));
+  }
 
   get estado() {
     return appJotaiStore.get(pizarraAtom);
@@ -157,6 +166,13 @@ class Pizarra {
       this.listo = true;
     });
 
+    if (!(await api.haySesion())) {
+      this.actualizar({ necesitaLogin: true });
+      await new Promise<void>((resolve) => {
+        this.alEntrar = resolve;
+      });
+    }
+
     let proyectos = await api.listar();
     if (!proyectos.length) {
       proyectos = [await api.crearProyecto("Brainstorming")];
@@ -168,7 +184,8 @@ class Pizarra {
       [params.get("proyecto"), leerLocal<string>(CLAVE_ULTIMO_PROYECTO)].find(
         (id) => id && proyectos.some((x) => x.id === id),
       ) ?? proyectos[0].id;
-    const h = this.hojaInicial(p, params.get("hoja"));
+    const rescatada = await this.rescatarDelNavegador(p);
+    const h = rescatada ?? this.hojaInicial(p, params.get("hoja"));
 
     const { escena, etag } = (await api.leerHoja(p, h))!;
     this.etag = etag;
@@ -184,6 +201,60 @@ class Pizarra {
       files: escena.files,
       scrollToContent: !vista,
     };
+  }
+
+  /**
+   * La versión anterior de la pizarra guardaba el dibujo en el navegador: si
+   * quedó algo, pasa una sola vez a una hoja nueva del proyecto inicial.
+   */
+  private async rescatarDelNavegador(p: string) {
+    if (leerLocal(CLAVE_RESCATADO)) {
+      return null;
+    }
+    const vivos = (importFromLocalStorage().elements ?? []).filter(
+      (elemento) => !elemento.isDeleted,
+    );
+    if (!vivos.length) {
+      guardarLocal(CLAVE_RESCATADO, true);
+      return null;
+    }
+    try {
+      const escena = JSON.parse(serializeAsJSON(vivos, {}, {}, "local"));
+      const { proyecto, hoja } = await api.crearHoja(
+        p,
+        "Rescatado del navegador",
+        escena,
+      );
+      this.reemplazarProyecto(proyecto);
+      guardarLocal(CLAVE_RESCATADO, true);
+      return hoja.id;
+    } catch (error) {
+      // no frena la carga: se reintenta la próxima vez que se abra
+      console.error("No se pudo rescatar el dibujo del navegador", error);
+      return null;
+    }
+  }
+
+  // --- sesión ----------------------------------------------------------------
+
+  /** Lanza el error del servidor (contraseña incorrecta, demasiados intentos). */
+  async iniciarSesion(contrasena: string) {
+    await api.entrar(contrasena);
+    this.actualizar({ necesitaLogin: false });
+    if (this.alEntrar) {
+      this.alEntrar();
+      this.alEntrar = null;
+    } else if (this.listo) {
+      // la sesión venció con la pizarra abierta: retomar lo pendiente
+      await this.guardarPendiente();
+      await this.revisarRemoto();
+    }
+  }
+
+  async cerrarSesion() {
+    await this.guardarPendiente();
+    await this.hacer(() => api.salir());
+    window.location.reload();
   }
 
   private hojaInicial(p: string, pedida?: string | null) {

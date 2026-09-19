@@ -16,13 +16,22 @@ Si alguien edita el `.excalidraw` directamente, la app lo trae sola (revisa cada
 
 ## Seguridad
 
-La API (`/api/*`) solo responde con un JWT válido de **Cloudflare Access** (header `Cf-Access-Jwt-Assertion` o cookie `CF_Authorization`), verificado contra las claves del equipo. Sin configurar responde 503.
+La app en sí es pública (es el mismo código abierto de Excalidraw); lo que está protegido es la API (`/api/*`), que pide iniciar sesión con **una sola contraseña**:
 
-| Variable                | Ejemplo                         |
-| ----------------------- | ------------------------------- |
-| `CF_ACCESS_TEAM_DOMAIN` | `miequipo.cloudflareaccess.com` |
-| `CF_ACCESS_AUD`         | Application Audience (AUD) Tag  |
-| `PIZARRA_SIN_AUTH=1`    | solo desarrollo local           |
+- se guarda como hash scrypt en `DATA_DIR/.contrasena` (nunca en texto);
+- la sesión es una cookie `HttpOnly`, `SameSite=Strict` y `Secure` (detrás de Cloudflare), firmada con HMAC y válida por 30 días;
+- tras 5 intentos fallidos desde una IP (o 30 en total) se bloquea 15 min;
+- cambiar la contraseña cierra todas las sesiones abiertas.
+
+Cargar o cambiar la contraseña (la pide sin mostrarla):
+
+```bash
+docker exec -it excalidraw node server.mjs contrasena
+```
+
+Sin contraseña cargada la API responde 503. `PIZARRA_SIN_AUTH=1` la desactiva (solo para desarrollo local).
+
+La primera vez que un navegador entra, si tenía un dibujo de la versión anterior (guardado en el navegador), se copia a una hoja "Rescatado del navegador".
 
 ## Desarrollo
 
@@ -41,8 +50,7 @@ node --test pizarra-server/server.test.mjs
 ```bash
 docker build -f pizarra-server/Dockerfile -t pizarra .
 docker run -d --name excalidraw --restart unless-stopped \
-  -p 127.0.0.1:8095:8080 -v ~/pizarra-data:/data \
-  --env-file ~/pizarra.env pizarra
+  -p 127.0.0.1:8095:8080 -v ~/pizarra-data:/data pizarra
 ```
 
 ## Traer cambios de Excalidraw
