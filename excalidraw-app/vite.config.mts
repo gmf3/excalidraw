@@ -17,6 +17,9 @@ export default defineConfig(({ mode }) => {
       port: Number(envVars.VITE_APP_PORT || 3000),
       // open the browser
       open: true,
+      proxy: envVars.VITE_APP_PIZARRA_API_PROXY
+        ? { "/api": envVars.VITE_APP_PIZARRA_API_PROXY }
+        : undefined,
     },
     // We need to specify the envDir since now there are no
     //more located in parallel with the vite.config.ts file but in parent dir

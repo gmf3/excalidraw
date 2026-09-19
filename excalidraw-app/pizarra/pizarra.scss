@@ -1,0 +1,321 @@
+.excalidraw {
+  // --- panel lateral ----------------------------------------------------------
+
+  .pizarra-sidebar {
+    .pizarra-sidebar__titulo {
+      font-weight: 600;
+      font-size: 1rem;
+      padding-inline-start: 0.25rem;
+    }
+
+    .pizarra-sidebar__cuerpo {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.25rem 0.75rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .pizarra-sidebar__pie {
+      padding: 0.5rem 1rem 0.75rem;
+      border-top: 1px solid var(--default-border-color);
+    }
+  }
+
+  .pizarra-proyecto--abierto {
+    background: var(--color-surface-low);
+    border-radius: var(--border-radius-lg);
+    padding-bottom: 0.25rem;
+  }
+
+  .pizarra-fila {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.25rem;
+    padding: 0 0.5rem;
+    border-radius: var(--border-radius-md);
+    cursor: pointer;
+    color: var(--text-primary-color);
+
+    &:hover {
+      background: var(--button-hover-bg);
+    }
+
+    &:hover .pizarra-fila__acciones,
+    &:focus-within .pizarra-fila__acciones {
+      opacity: 1;
+    }
+  }
+
+  .pizarra-fila--proyecto {
+    font-weight: 600;
+  }
+
+  .pizarra-fila--hoja {
+    margin-inline-start: 0.75rem;
+    font-size: 0.875rem;
+  }
+
+  .pizarra-fila--activa {
+    background: var(--color-primary-light);
+    color: var(--color-primary-darker);
+
+    &:hover {
+      background: var(--color-primary-light);
+    }
+  }
+
+  .pizarra-fila__nombre {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pizarra-fila__cuenta {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--color-gray-50);
+  }
+
+  .pizarra-fila__acciones {
+    display: flex;
+    gap: 0.125rem;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+
+  // en pantallas táctiles no hay hover: las acciones quedan siempre visibles
+  @media (hover: none) {
+    .pizarra-fila__acciones {
+      opacity: 1;
+    }
+  }
+
+  .pizarra-icono {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    border: none;
+    border-radius: var(--border-radius-md);
+    background: transparent;
+    color: inherit;
+    font-size: 0.875rem;
+    cursor: pointer;
+
+    svg {
+      width: 1rem;
+      height: 1rem;
+    }
+
+    &:hover {
+      background: var(--color-surface-high);
+    }
+  }
+
+  .pizarra-icono--peligro:hover {
+    color: var(--color-danger);
+  }
+
+  .pizarra-agregar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.25rem;
+    padding: 0 0.5rem;
+    border: 1px dashed var(--default-border-color);
+    border-radius: var(--border-radius-md);
+    background: transparent;
+    color: var(--color-gray-60);
+    font-size: 0.875rem;
+    cursor: pointer;
+
+    svg {
+      width: 1rem;
+      height: 1rem;
+    }
+
+    &:hover {
+      color: var(--color-primary);
+      border-color: var(--color-primary);
+    }
+  }
+
+  .pizarra-agregar--hoja {
+    margin: 0.25rem 0.5rem 0 1.25rem;
+    border-style: none;
+  }
+
+  .pizarra-campo {
+    flex: 1;
+    min-width: 8rem;
+    height: 2rem;
+    padding: 0 0.5rem;
+    border: 1px solid var(--color-primary);
+    border-radius: var(--border-radius-md);
+    background: var(--island-bg-color);
+    color: var(--text-primary-color);
+    font: inherit;
+    font-size: 0.875rem;
+    outline: none;
+  }
+
+  // --- estado de guardado -----------------------------------------------------
+
+  .pizarra-estado {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--color-gray-50);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pizarra-estado__punto {
+    flex: none;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--color-success);
+  }
+
+  .pizarra-estado--pendiente .pizarra-estado__punto,
+  .pizarra-estado__punto.pizarra-estado--pendiente,
+  .pizarra-estado--guardando .pizarra-estado__punto,
+  .pizarra-estado__punto.pizarra-estado--guardando,
+  .pizarra-estado--cargando .pizarra-estado__punto,
+  .pizarra-estado__punto.pizarra-estado--cargando {
+    background: var(--color-warning);
+  }
+
+  .pizarra-estado--error {
+    color: var(--color-danger);
+  }
+
+  .pizarra-estado--error .pizarra-estado__punto,
+  .pizarra-estado__punto.pizarra-estado--error {
+    background: var(--color-danger);
+  }
+
+  // --- botón de arriba a la derecha ------------------------------------------
+
+  .pizarra-trigger .sidebar-trigger__label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    // en el celular la barra de arriba lo achicaba hasta dejarlo en 0
+    flex-shrink: 0;
+  }
+
+  .pizarra-trigger__texto {
+    max-width: 16rem;
+    // .sidebar-trigger usa line-height 0 (pensado solo para íconos)
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pizarra-trigger__proyecto {
+    color: var(--color-gray-50);
+  }
+
+  // en el celular los botones del canvas tienen ancho fijo de ícono
+  &.excalidraw--mobile .sidebar-trigger.pizarra-trigger {
+    width: auto;
+    padding-inline: 0.5rem;
+  }
+
+  &.excalidraw--mobile .pizarra-trigger__texto {
+    max-width: 40vw;
+  }
+
+  // --- pestañas de hojas en el pie -------------------------------------------
+
+  // el pie de la app alinea su centro a la derecha (ícono de cifrado);
+  // las pestañas van centradas
+  .footer-center:has(.pizarra-pestanas) {
+    justify-content: center;
+    margin-inline-start: 0;
+    min-width: 0;
+
+    & > div {
+      min-width: 0;
+    }
+  }
+
+  .pizarra-pestanas {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    max-width: min(60vw, 48rem);
+    margin-inline: auto;
+    padding: 0.25rem;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    background: var(--island-bg-color);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-island);
+
+    .pizarra-estado {
+      flex: none;
+      padding-inline: 0.5rem;
+    }
+
+    .pizarra-campo {
+      flex: none;
+      width: 9rem;
+    }
+  }
+
+  .pizarra-pestana {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    height: 2rem;
+    max-width: 12rem;
+    padding: 0 0.75rem;
+    border: none;
+    border-radius: var(--border-radius-md);
+    background: transparent;
+    color: var(--text-primary-color);
+    font: inherit;
+    font-size: 0.875rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--button-hover-bg);
+    }
+
+    svg {
+      width: 1rem;
+      height: 1rem;
+    }
+  }
+
+  .pizarra-pestana--activa {
+    background: var(--color-primary-light);
+    color: var(--color-primary-darker);
+    font-weight: 600;
+
+    &:hover {
+      background: var(--color-primary-light);
+    }
+  }
+
+  .pizarra-pestana--nueva {
+    padding: 0 0.5rem;
+    color: var(--color-gray-60);
+  }
+}

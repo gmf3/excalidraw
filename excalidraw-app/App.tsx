@@ -148,6 +148,8 @@ import "./index.scss";
 
 import { ExcalidrawPlusPromoBanner } from "./components/ExcalidrawPlusPromoBanner";
 import { AppSidebar } from "./components/AppSidebar";
+import { PIZARRA_ENABLED, pizarra } from "./pizarra/pizarra";
+import { PizarraSidebar, PizarraTrigger } from "./pizarra/PizarraUI";
 
 import type { CollabAPI } from "./collab/Collab";
 
@@ -376,7 +378,7 @@ const ExcalidrawWrapper = () => {
   const excalidrawAPI = useExcalidrawAPI();
 
   const [errorMessage, setErrorMessage] = useState("");
-  const isCollabDisabled = isRunningInIframe();
+  const isCollabDisabled = isRunningInIframe() || PIZARRA_ENABLED;
 
   const { editorTheme, appTheme, setAppTheme } = useHandleAppTheme();
 
@@ -562,6 +564,37 @@ const ExcalidrawWrapper = () => {
       return;
     }
 
+    if (PIZARRA_ENABLED) {
+      pizarra.iniciar(excalidrawAPI).then(
+        (scene) => initialStatePromiseRef.current.promise.resolve(scene),
+        (error) =>
+          initialStatePromiseRef.current.promise.resolve({
+            appState: {
+              errorMessage: `No se pudo abrir la pizarra: ${error.message}`,
+            },
+          }),
+      );
+      const onPageHide = () => pizarra.guardarAlSalir();
+      const onVisibilityChange = () => {
+        if (document.hidden) {
+          pizarra.guardarAlSalir();
+        } else {
+          pizarra.revisarRemoto();
+        }
+      };
+      const stopRemoteCheck = pizarra.iniciarRevision();
+      window.addEventListener("pagehide", onPageHide);
+      document.addEventListener(EVENT.VISIBILITY_CHANGE, onVisibilityChange);
+      return () => {
+        stopRemoteCheck();
+        window.removeEventListener("pagehide", onPageHide);
+        document.removeEventListener(
+          EVENT.VISIBILITY_CHANGE,
+          onVisibilityChange,
+        );
+      };
+    }
+
     initializeScene({ collabAPI, excalidrawAPI }).then(async (data) => {
       loadImages(data, /* isInitialLoad */ true);
       initialStatePromiseRef.current.promise.resolve(data.scene);
@@ -689,6 +722,13 @@ const ExcalidrawWrapper = () => {
 
   useEffect(() => {
     const unloadHandler = (event: BeforeUnloadEvent) => {
+      if (PIZARRA_ENABLED) {
+        pizarra.guardarAlSalir();
+        if (pizarra.tieneCambiosSinGuardar()) {
+          preventUnload(event);
+        }
+        return;
+      }
       LocalData.flushSave();
 
       if (
@@ -717,6 +757,11 @@ const ExcalidrawWrapper = () => {
     appState: AppState,
     files: BinaryFiles,
   ) => {
+    if (PIZARRA_ENABLED) {
+      pizarra.onChange(elements, appState);
+      return;
+    }
+
     if (collabAPI?.isCollaborating()) {
       collabAPI.syncElements(elements);
     }
@@ -993,6 +1038,9 @@ const ExcalidrawWrapper = () => {
         theme={editorTheme}
         onThemeChange={setAppTheme}
         renderTopRightUI={(isMobile) => {
+          if (PIZARRA_ENABLED) {
+            return <PizarraTrigger compacto={isMobile} />;
+          }
           if (isMobile || !collabAPI || isCollabDisabled) {
             return null;
           }
@@ -1101,6 +1149,7 @@ const ExcalidrawWrapper = () => {
         />
 
         <AppSidebar />
+        {PIZARRA_ENABLED && <PizarraSidebar />}
 
         {errorMessage && (
           <ErrorDialog onClose={() => setErrorMessage("")}>

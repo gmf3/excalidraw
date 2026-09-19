@@ -5,6 +5,7 @@ import { WelcomeScreen } from "@excalidraw/excalidraw/index";
 import React from "react";
 
 import { isExcalidrawPlusSignedUser } from "../app_constants";
+import { PIZARRA_ENABLED } from "../pizarra/pizarra";
 
 export const AppWelcomeScreen: React.FC<{
   onCollabDialogOpen: () => any;
@@ -13,7 +14,16 @@ export const AppWelcomeScreen: React.FC<{
   const { t } = useI18n();
   let headingContent;
 
-  if (isExcalidrawPlusSignedUser) {
+  if (PIZARRA_ENABLED) {
+    headingContent = (
+      <>
+        Esta hoja se guarda sola en pc3.
+        <br />
+        Cambiá de proyecto u hoja desde arriba a la derecha
+        <br />o con las pestañas de abajo.
+      </>
+    );
+  } else if (isExcalidrawPlusSignedUser) {
     headingContent = t("welcomeScreen.app.center_heading_plus")
       .split(/(Excalidraw\+)/)
       .map((bit, idx) => {
@@ -64,7 +74,7 @@ export const AppWelcomeScreen: React.FC<{
               onSelect={() => props.onCollabDialogOpen()}
             />
           )}
-          {!isExcalidrawPlusSignedUser && (
+          {!isExcalidrawPlusSignedUser && !PIZARRA_ENABLED && (
             <WelcomeScreen.Center.MenuItemLink
               href={`${
                 import.meta.env.VITE_APP_PLUS_LP
