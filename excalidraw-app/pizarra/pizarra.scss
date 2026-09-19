@@ -53,18 +53,18 @@
   }
 
   .pizarra-proyecto--abierto {
-    background: var(--color-surface-low);
-    border-radius: var(--border-radius-lg);
+    background: transparent;
+    border-radius: 0;
     padding-bottom: 0.25rem;
   }
 
   .pizarra-fila {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    min-height: 2.25rem;
-    padding: 0 0.5rem;
-    border-radius: var(--border-radius-md);
+    gap: 0.25rem;
+    min-height: 1.875rem;
+    padding: 0 0.375rem;
+    border-radius: 0.25rem;
     cursor: pointer;
     color: var(--text-primary-color);
 
@@ -80,12 +80,54 @@
 
   .pizarra-fila--proyecto {
     font-weight: 600;
+    min-height: 2rem;
+    border-bottom: 1px solid var(--default-border-color);
   }
 
   .pizarra-fila--hoja {
-    // --pizarra-nivel lo pone cada NodoHoja según su profundidad en el árbol
-    margin-inline-start: calc(0.75rem + var(--pizarra-nivel, 0) * 1.1rem);
     font-size: 0.875rem;
+  }
+
+  // Árbol estilo Explorer de VS Code: cada subárbol dibuja su propio tramo
+  // vertical y cada nodo conecta con una rama en L. Al ser recursivo funciona
+  // a cualquier profundidad sin hardcodear niveles.
+  .pizarra-nodo {
+    position: relative;
+  }
+
+  .pizarra-subarbol {
+    position: relative;
+    margin-inline-start: 0.75rem;
+    padding-inline-start: 0.75rem;
+  }
+
+  .pizarra-subarbol > .pizarra-nodo::before {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    inset-inline-start: -0.75rem;
+    top: 0;
+    width: 0.75rem;
+    height: 0.9375rem;
+    border-inline-start: 1px solid var(--default-border-color);
+    border-bottom: 1px solid var(--default-border-color);
+    pointer-events: none;
+  }
+
+  .pizarra-subarbol > .pizarra-nodo:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    inset-inline-start: -0.75rem;
+    top: 0.9375rem;
+    bottom: 0;
+    border-inline-start: 1px solid var(--default-border-color);
+    pointer-events: none;
+  }
+
+  .pizarra-nodo > .pizarra-fila {
+    position: relative;
+    z-index: 1;
   }
 
   .pizarra-chevron {
@@ -118,13 +160,23 @@
   }
 
   .pizarra-chevron--espaciador {
-    visibility: hidden;
+    visibility: visible;
     pointer-events: none;
+
+    &::before {
+      content: "";
+      width: 0.4rem;
+      height: 0.5rem;
+      border: 1px solid currentColor;
+      border-radius: 1px;
+      opacity: 0.45;
+    }
   }
 
   .pizarra-fila--activa {
     background: var(--color-primary-light);
     color: var(--color-primary-darker);
+    box-shadow: inset 2px 0 0 var(--color-primary);
 
     &:hover {
       background: var(--color-primary-light);

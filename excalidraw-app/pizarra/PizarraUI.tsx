@@ -138,7 +138,7 @@ const NodoHoja = ({
   const abierta = expandido.has(hoja.id);
 
   return (
-    <>
+    <div className="pizarra-nodo">
       {editando ? (
         <div
           className="pizarra-fila pizarra-fila--hoja"
@@ -223,37 +223,40 @@ const NodoHoja = ({
           </span>
         </div>
       )}
-      {creandoHija && (
-        <div
-          className="pizarra-fila pizarra-fila--hoja"
-          style={{ "--pizarra-nivel": nivel + 1 } as React.CSSProperties}
-        >
-          <span className="pizarra-chevron pizarra-chevron--espaciador" />
-          <CampoNombre
-            placeholder="Nombre de la sub-hoja"
-            onListo={(nombre) => {
-              setCreandoHija(false);
-              if (nombre) {
-                pizarra.crearHoja(nombre, hoja.id);
-              }
-            }}
-          />
+      {(creandoHija || (abierta && hijos.length > 0)) && (
+        <div className="pizarra-subarbol">
+          {creandoHija && (
+            <div className="pizarra-nodo pizarra-nodo--borrador">
+              <div className="pizarra-fila pizarra-fila--hoja">
+                <span className="pizarra-chevron pizarra-chevron--espaciador" />
+                <CampoNombre
+                  placeholder="Nombre de la sub-hoja"
+                  onListo={(nombre) => {
+                    setCreandoHija(false);
+                    if (nombre) {
+                      pizarra.crearHoja(nombre, hoja.id);
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          )}
+          {abierta &&
+            hijos.map((hijo) => (
+              <NodoHoja
+                key={hijo.id}
+                hoja={hijo}
+                hojas={hojas}
+                nivel={nivel + 1}
+                expandido={expandido}
+                onAlternar={onAlternar}
+                onExpandir={onExpandir}
+                onBorrar={onBorrar}
+              />
+            ))}
         </div>
       )}
-      {abierta &&
-        hijos.map((hijo) => (
-          <NodoHoja
-            key={hijo.id}
-            hoja={hijo}
-            hojas={hojas}
-            nivel={nivel + 1}
-            expandido={expandido}
-            onAlternar={onAlternar}
-            onExpandir={onExpandir}
-            onBorrar={onBorrar}
-          />
-        ))}
-    </>
+    </div>
   );
 };
 
