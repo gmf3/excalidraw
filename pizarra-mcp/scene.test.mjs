@@ -44,7 +44,25 @@ test("convierte figuras, labels y conexiones a elementos Excalidraw", () => {
   );
   assert.equal(arrowLabel.containerId, null);
   assert.deepEqual(arrow.groupIds, arrowLabel.groupIds);
+  assert.equal(web.height, 60);
+  assert.equal(elements.find((element) => element.id === "api").height, 50);
   assert.equal(makeScene(elements).type, "excalidraw");
+});
+
+test("permite conservar una altura explícita cuando fitToText es false", () => {
+  const [shape] = elementsFromSkeleton([
+    {
+      id: "panel",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 300,
+      height: 180,
+      label: "Panel",
+      fitToText: false,
+    },
+  ]);
+  assert.equal(shape.height, 180);
 });
 
 test("rechaza etiquetas br para evitar texto literal en el lienzo", () => {

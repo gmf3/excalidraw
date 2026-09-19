@@ -123,10 +123,23 @@ const shapeElement = (spec) => {
   if (!["rectangle", "ellipse", "diamond"].includes(spec.type)) {
     throw new Error(`Tipo de figura no soportado: ${spec.type}`);
   }
+  const fontSize = Number(spec.fontSize) || 20;
+  const fittedHeight = spec.label
+    ? Math.max(
+        50,
+        textMetrics(assertText(spec.label, "label"), fontSize).height + 10,
+      )
+    : null;
   return baseElement(spec.type, {
     width: 220,
     height: 100,
     ...spec,
+    // Mismo ajuste compacto que hace Excalidraw al editar el rótulo:
+    // conserva el ancho del layout y deja 5 px arriba/abajo.
+    height:
+      fittedHeight && spec.fitToText !== false
+        ? fittedHeight
+        : Number(spec.height) || 100,
   });
 };
 
