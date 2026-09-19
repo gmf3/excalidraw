@@ -263,12 +263,29 @@ export const elementsFromSkeleton = (input) => {
     if (raw.label) {
       const fontSize = Number(raw.fontSize) || 16;
       const metrics = textMetrics(raw.label, fontSize);
+      const centerX = linear.x + linear.width / 2;
+      const centerY = linear.y + linear.height / 2;
+      const labelBackground = baseElement("rectangle", {
+        id: raw.labelBackgroundId || `${linear.id}-label-bg`,
+        type: "rectangle",
+        x: centerX - metrics.width / 2 - 6,
+        y: centerY - metrics.height / 2 - 3,
+        width: metrics.width + 12,
+        height: metrics.height + 6,
+        strokeColor: raw.labelBackgroundColor || "#ffffff",
+        backgroundColor: raw.labelBackgroundColor || "#ffffff",
+        strokeWidth: 1,
+        roughness: 0,
+        opacity: 96,
+        groupIds: groupId ? [groupId] : [],
+      });
+      elements.push(labelBackground);
       const label = textElement({
         id: raw.labelId || id(),
         type: "text",
         text: raw.label,
-        x: linear.x + (linear.width - metrics.width) / 2,
-        y: linear.y + (linear.height - metrics.height) / 2 - 8,
+        x: centerX - metrics.width / 2,
+        y: centerY - metrics.height / 2,
         width: metrics.width,
         height: metrics.height,
         fontSize,

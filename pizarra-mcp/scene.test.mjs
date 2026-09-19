@@ -26,7 +26,7 @@ test("convierte figuras, labels y conexiones a elementos Excalidraw", () => {
   ]);
   assert.equal(
     elements.filter((element) => element.type === "rectangle").length,
-    2,
+    3,
   );
   assert.equal(elements.filter((element) => element.type === "text").length, 3);
   const arrow = elements.find((element) => element.type === "arrow");
@@ -42,8 +42,17 @@ test("convierte figuras, labels y conexiones a elementos Excalidraw", () => {
   const arrowLabel = elements.find(
     (element) => element.type === "text" && element.text === "HTTPS",
   );
+  const arrowLabelBackground = elements.find(
+    (element) => element.id === "request-label-bg",
+  );
   assert.equal(arrowLabel.containerId, null);
   assert.deepEqual(arrow.groupIds, arrowLabel.groupIds);
+  assert.deepEqual(arrow.groupIds, arrowLabelBackground.groupIds);
+  assert.equal(arrowLabelBackground.backgroundColor, "#ffffff");
+  assert.equal(
+    arrowLabel.y + arrowLabel.height / 2,
+    arrow.y + arrow.height / 2,
+  );
   assert.equal(web.height, 60);
   assert.equal(elements.find((element) => element.id === "api").height, 50);
   assert.equal(makeScene(elements).type, "excalidraw");
