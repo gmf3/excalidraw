@@ -8,6 +8,7 @@ Se inspira en [`excalidraw/excalidraw-mcp`](https://github.com/excalidraw/excali
 
 - `read_me`
 - `list_projects`
+- `create_project` — crea un proyecto nuevo con al menos una hoja
 - `list_sheets`
 - `read_sheet`
 - `preview_sheet` — devuelve una vista PNG directamente al cliente MCP

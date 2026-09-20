@@ -33,6 +33,18 @@ test("MCP crea y lee una hoja persistente sin navegador", async (t) => {
   assert(listed.tools.some((tool) => tool.name === "write_diagram"));
   assert(listed.tools.some((tool) => tool.name === "move_sheet"));
   assert(listed.tools.some((tool) => tool.name === "preview_sheet"));
+  assert(listed.tools.some((tool) => tool.name === "create_project"));
+
+  const project = await client.callTool({
+    name: "create_project",
+    arguments: { name: "Sistema de pedidos" },
+  });
+  assert.equal(project.isError, undefined);
+  assert.match(project.content[0].text, /"project": "sistema-de-pedidos"/);
+  assert.match(project.content[0].text, /"nombre": "General"/);
+
+  const projects = await client.callTool({ name: "list_projects", arguments: {} });
+  assert.match(projects.content[0].text, /"id": "sistema-de-pedidos"/);
 
   const stack = await client.callTool({
     name: "create_sheet",

@@ -109,6 +109,33 @@ server.registerTool(
 );
 
 server.registerTool(
+  "create_project",
+  {
+    description:
+      "Crea un proyecto nuevo en la Pizarra, con al menos una hoja (por defecto 'General').",
+    inputSchema: z.object({
+      name: z.string().min(1).max(80),
+      sheets: z.array(z.string().min(1).max(80)).optional(),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  async ({ name, sheets }) => {
+    try {
+      const created = almacen.crearProyecto(name, sheets);
+      const response = {
+        project: created.id,
+        name: created.nombre,
+        sheets: created.hojas,
+        url: urlFor(created.id, created.hojas[0].id),
+      };
+      return textResult(response, response);
+    } catch (error) {
+      return fail(error);
+    }
+  },
+);
+
+server.registerTool(
   "list_sheets",
   {
     description: "Lista las hojas de un proyecto en su orden actual.",
