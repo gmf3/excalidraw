@@ -3,6 +3,12 @@
     $closeButtonSize: 1.2rem;
     $closeButtonPadding: 0.4rem;
 
+    // Ancla la X a la esquina de ESTE cartel, no a la del stack que lo
+    // contiene (.floating-status-stack, que es position:absolute y por lo
+    // tanto el containing block por defecto de .close). Sin esto, la X queda
+    // clickeable lejos del cartel visible y el toast parece imposible de
+    // cerrar.
+    position: relative;
     animation: Toast-fade-in 0.5s;
     min-width: 220px;
     max-width: min(360px, calc(100vw - 32px));
