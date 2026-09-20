@@ -40,3 +40,7 @@ tool_timeout_sec = 60
 ```
 
 SSH proporciona autenticación y el MCP no expone un puerto adicional.
+
+## Claude Code
+
+Ya está registrado en `.mcp.json` del vault (scope `project`, mismo comando que usa Codex arriba) y tiene un agente equivalente, `diagramador-pizarra` (`.claude/agents/diagramador-pizarra.md`), con las mismas reglas de composición que su par de Codex. Al abrir una sesión nueva en el vault, Claude Code pide aprobar el servidor `pizarra` una vez (`claude mcp list` para ver el estado).
