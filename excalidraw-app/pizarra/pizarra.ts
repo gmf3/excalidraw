@@ -45,6 +45,9 @@ export type EstadoPizarra = {
   guardado: EstadoGuardado;
   error: string | null;
   necesitaLogin: boolean;
+  /** Ícono breve arriba a la derecha: el servidor acaba de fusionar este
+   * guardado con cambios de otro lado (Fase 0). */
+  fusionReciente: boolean;
 };
 
 export const pizarraAtom = atom<EstadoPizarra>({
@@ -54,6 +57,7 @@ export const pizarraAtom = atom<EstadoPizarra>({
   guardado: "cargando",
   error: null,
   necesitaLogin: false,
+  fusionReciente: false,
 });
 
 const GUARDAR_TRAS_MS = 800;
@@ -204,6 +208,20 @@ class Pizarra {
       closable: true,
       duration: fijo ? Infinity : 5000,
     });
+  }
+
+  private timerFusion: ReturnType<typeof setTimeout> | null = null;
+
+  /** Ícono breve arriba a la derecha en vez de un toast de texto. */
+  private mostrarFusion() {
+    if (this.timerFusion) {
+      clearTimeout(this.timerFusion);
+    }
+    this.actualizar({ fusionReciente: true });
+    this.timerFusion = setTimeout(() => {
+      this.timerFusion = null;
+      this.actualizar({ fusionReciente: false });
+    }, 2500);
   }
 
   // --- carga -----------------------------------------------------------------
@@ -576,7 +594,7 @@ class Pizarra {
         this.estado.hojaId === h
       ) {
         this.aplicarEscena(combinado.escena, combinado.etag, this.vistaActual());
-        this.avisar("Se combinó con cambios hechos en otro lugar.");
+        this.mostrarFusion();
       } else {
         this.etag = etag;
         this.firmaGuardada = firmaSubida;

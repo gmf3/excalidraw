@@ -528,6 +528,41 @@ export const PizarraTrigger = ({ compacto }: { compacto: boolean }) => {
   );
 };
 
+/**
+ * Ícono arriba a la derecha, un par de segundos, cuando el servidor acaba de
+ * fusionar el último guardado con cambios hechos en otro lado (Fase 0) --
+ * reemplaza al toast de texto que tapaba el lienzo.
+ */
+export const PizarraFusionIndicador = () => {
+  const { fusionReciente } = useAtomValue(pizarraAtom);
+  return (
+    <div
+      className={clsx("pizarra-fusion", {
+        "pizarra-fusion--visible": fusionReciente,
+      })}
+      title="Se combinó con cambios hechos en otro lugar"
+      role="status"
+    >
+      <svg viewBox="0 0 20 20" width="16" height="16" fill="none">
+        <path
+          d="M4 8a6 6 0 0 1 10.4-4.1M16 4v3.5h-3.5"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M16 12a6 6 0 0 1-10.4 4.1M4 16v-3.5h3.5"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>
+  );
+};
+
 /** Pestañas de hojas en el pie (solo escritorio y tablet). */
 export const PizarraHojas = () => {
   const estado = useAtomValue(pizarraAtom);

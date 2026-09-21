@@ -327,6 +327,35 @@
     background: var(--color-danger);
   }
 
+  // --- ícono de fusión, arriba a la derecha -----------------------------------
+  // Debajo de la barra de herramientas y los avatares de colaboración (que ya
+  // ocupan esa esquina), para no taparlos.
+
+  .pizarra-fusion {
+    position: fixed;
+    top: 60px;
+    right: 12px;
+    z-index: var(--zIndex-layerUI);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--island-bg-color);
+    color: var(--color-primary);
+    box-shadow: var(--shadow-island);
+    opacity: 0;
+    transform: scale(0.7);
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+
+  .pizarra-fusion--visible {
+    opacity: 1;
+    transform: scale(1);
+  }
+
   // --- botón de arriba a la izquierda -----------------------------------------
 
   .pizarra-trigger .sidebar-trigger__label {

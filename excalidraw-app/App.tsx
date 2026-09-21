@@ -150,6 +150,7 @@ import { ExcalidrawPlusPromoBanner } from "./components/ExcalidrawPlusPromoBanne
 import { AppSidebar } from "./components/AppSidebar";
 import { PIZARRA_ENABLED, pizarra } from "./pizarra/pizarra";
 import {
+  PizarraFusionIndicador,
   PizarraLogin,
   PizarraSidebar,
   PizarraTrigger,
@@ -995,6 +996,7 @@ const ExcalidrawWrapper = () => {
       })}
     >
       {PIZARRA_ENABLED && <PizarraLogin tema={editorTheme} />}
+      {PIZARRA_ENABLED && <PizarraFusionIndicador />}
       <Excalidraw
         viewportStatusFrame={viewportStatusFrame}
         userToFollow={userToFollow}
