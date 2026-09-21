@@ -3,6 +3,7 @@ import ConfirmDialog from "@excalidraw/excalidraw/components/ConfirmDialog";
 import {
   chevronRight,
   LibraryIcon,
+  MagicIconThin,
   pencilIcon,
   PlusIcon,
   TrashIcon,
@@ -10,9 +11,19 @@ import {
 import clsx from "clsx";
 import { useEffect, useState } from "react";
 
+import type {
+  ExcalidrawImperativeAPI,
+  UIAppState,
+} from "@excalidraw/excalidraw/types";
+
 import { useAtomValue } from "../app-jotai";
 
 import { ancestrosDe, descendientesDe, hijosDe, rutaDe } from "./api";
+import {
+  elementosParaIA,
+  expandirSeleccion,
+  textoParaPortapapeles,
+} from "./paraIA";
 import { pizarra, pizarraAtom, SIDEBAR_PIZARRA } from "./pizarra";
 
 import "./pizarra.scss";
@@ -691,5 +702,52 @@ export const PizarraLogin = ({ tema }: { tema: "light" | "dark" }) => {
         </button>
       </form>
     </div>
+  );
+};
+
+/**
+ * Botón que aparece arriba a la derecha solo cuando hay algo seleccionado:
+ * copia el bloque al portapapeles en el formato abreviado que también
+ * entiende el MCP de la pizarra, para pegarlo en un chat con una IA.
+ */
+export const PizarraCopiarParaIA = ({
+  excalidrawAPI,
+  appState,
+  compacto,
+}: {
+  excalidrawAPI: ExcalidrawImperativeAPI;
+  appState: UIAppState;
+  compacto: boolean;
+}) => {
+  const cantidad = Object.keys(appState.selectedElementIds).length;
+  if (!cantidad) {
+    return null;
+  }
+  return (
+    <button
+      type="button"
+      className="pizarra-copiar-ia"
+      title="Copiar la selección en un formato que entiende una IA"
+      onClick={async () => {
+        const todos = excalidrawAPI.getSceneElementsIncludingDeleted();
+        const seleccion = expandirSeleccion(todos, appState.selectedElementIds);
+        const elementos = elementosParaIA(seleccion);
+        try {
+          await navigator.clipboard.writeText(textoParaPortapapeles(elementos));
+          excalidrawAPI.setToast({
+            message: `Copiado para IA (${elementos.length} elemento${
+              elementos.length === 1 ? "" : "s"
+            }).`,
+          });
+        } catch {
+          excalidrawAPI.setToast({
+            message: "No se pudo copiar al portapapeles.",
+          });
+        }
+      }}
+    >
+      {MagicIconThin}
+      {!compacto && <span>Copiar para IA</span>}
+    </button>
   );
 };

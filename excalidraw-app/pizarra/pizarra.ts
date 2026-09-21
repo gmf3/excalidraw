@@ -117,7 +117,10 @@ const claveDeColaboracion = async (proyecto: string, hoja: string) => {
   for (const byte of bytes) {
     binario += String.fromCharCode(byte);
   }
-  return btoa(binario).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(binario)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 };
 
 class Pizarra {
@@ -172,7 +175,11 @@ class Pizarra {
       // si cambiaste de hoja mientras se calculaba la clave, esta ya no es
       // la sala vigente -- no la arranques.
       if (this.salaColaboracionActual === sala) {
-        collabAPI.startCollaboration({ roomId: sala, roomKey, keepLocalScene: true });
+        collabAPI.startCollaboration({
+          roomId: sala,
+          roomKey,
+          keepLocalScene: true,
+        });
       }
     });
   }
@@ -593,7 +600,11 @@ class Pizarra {
         this.estado.proyectoId === p &&
         this.estado.hojaId === h
       ) {
-        this.aplicarEscena(combinado.escena, combinado.etag, this.vistaActual());
+        this.aplicarEscena(
+          combinado.escena,
+          combinado.etag,
+          this.vistaActual(),
+        );
         this.mostrarFusion();
       } else {
         this.etag = etag;

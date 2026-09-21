@@ -150,6 +150,7 @@ import { ExcalidrawPlusPromoBanner } from "./components/ExcalidrawPlusPromoBanne
 import { AppSidebar } from "./components/AppSidebar";
 import { PIZARRA_ENABLED, pizarra } from "./pizarra/pizarra";
 import {
+  PizarraCopiarParaIA,
   PizarraFusionIndicador,
   PizarraLogin,
   PizarraSidebar,
@@ -1047,8 +1048,17 @@ const ExcalidrawWrapper = () => {
         renderTopLeftUI={(isMobile) =>
           PIZARRA_ENABLED ? <PizarraTrigger compacto={isMobile} /> : null
         }
-        renderTopRightUI={(isMobile) => {
-          if (PIZARRA_ENABLED || isMobile || !collabAPI || isCollabDisabled) {
+        renderTopRightUI={(isMobile, appState) => {
+          if (PIZARRA_ENABLED) {
+            return excalidrawAPI ? (
+              <PizarraCopiarParaIA
+                excalidrawAPI={excalidrawAPI}
+                appState={appState}
+                compacto={isMobile}
+              />
+            ) : null;
+          }
+          if (isMobile || !collabAPI || isCollabDisabled) {
             return null;
           }
 

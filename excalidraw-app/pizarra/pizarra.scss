@@ -356,6 +356,41 @@
     transform: scale(1);
   }
 
+  // --- botón "copiar para IA", arriba a la derecha, solo con selección --------
+
+  .pizarra-copiar-ia {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    height: var(--lg-button-size);
+    padding-inline: 0.75rem;
+    border: 1px solid var(--default-border-color);
+    border-radius: var(--border-radius-lg);
+    background: var(--island-bg-color);
+    box-shadow: var(--shadow-island);
+    color: var(--text-primary-color);
+    font: inherit;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+    cursor: pointer;
+
+    svg {
+      width: var(--lg-icon-size);
+      height: var(--lg-icon-size);
+      flex: none;
+    }
+
+    &:hover {
+      border-color: var(--color-primary);
+      color: var(--color-primary);
+    }
+  }
+
+  // en el celular el componente ya omite el texto (ver compacto en PizarraUI)
+  &.excalidraw--mobile .pizarra-copiar-ia {
+    padding-inline: 0.5rem;
+  }
+
   // --- botón de arriba a la izquierda -----------------------------------------
 
   .pizarra-trigger .sidebar-trigger__label {
