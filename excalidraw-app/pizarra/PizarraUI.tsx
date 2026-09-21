@@ -427,13 +427,23 @@ export const PizarraSidebar = () => {
       </div>
       <div className="pizarra-sidebar__pie">
         <EstadoDeGuardado />
-        <button
-          type="button"
-          className="pizarra-salir"
-          onClick={() => pizarra.cerrarSesion()}
-        >
-          Cerrar sesión
-        </button>
+        <div className="pizarra-sidebar__acciones">
+          <button
+            type="button"
+            className="pizarra-salir"
+            title="Por si dejaste otra pestaña o dispositivo abierto: los desloguea a todos menos a este, sin tocar tu trabajo acá"
+            onClick={() => pizarra.cerrarOtrasSesiones()}
+          >
+            Cerrar otras sesiones
+          </button>
+          <button
+            type="button"
+            className="pizarra-salir"
+            onClick={() => pizarra.cerrarSesion()}
+          >
+            Cerrar sesión
+          </button>
+        </div>
       </div>
       {borrado && (
         <ConfirmDialog

@@ -110,6 +110,11 @@ export const api = {
     await pedir("/logout", { method: "POST" });
   },
 
+  /** Invalida cualquier otra sesión abierta (otra pestaña, otro dispositivo). */
+  cerrarOtrasSesiones: async () => {
+    await pedir("/sesion/cerrar-otras", { method: "POST" });
+  },
+
   listar: async () =>
     (await pedir<{ proyectos: Proyecto[] }>("/proyectos")).datos!.proyectos,
 

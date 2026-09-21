@@ -263,6 +263,22 @@ class Pizarra {
     window.location.reload();
   }
 
+  /**
+   * Corta cualquier otra pestaña/dispositivo abierto con la misma
+   * contraseña. Guarda lo pendiente ACÁ primero (para no perderlo) y avisa
+   * que las otras se van a desloguear solas en su próximo pedido.
+   */
+  async cerrarOtrasSesiones() {
+    if (!(await this.guardarPendiente())) {
+      this.avisar("No se pudo guardar lo pendiente; cancelado.");
+      return;
+    }
+    await this.hacer(() => api.cerrarOtrasSesiones());
+    this.avisar(
+      "Listo. Cualquier otra pestaña o dispositivo va a pedir la contraseña de nuevo.",
+    );
+  }
+
   private hojaInicial(p: string, pedida?: string | null) {
     const hojas = this.estado.proyectos.find((x) => x.id === p)!.hojas;
     return (

@@ -169,7 +169,7 @@ export const crearAuth = (dataDir) => {
       mode: 0o600,
     });
   }
-  const secreto = fs.readFileSync(archivoSecreto, "utf8").trim();
+  let secreto = fs.readFileSync(archivoSecreto, "utf8").trim();
 
   const hashActual = () => {
     try {
@@ -263,6 +263,27 @@ export const crearAuth = (dataDir) => {
     },
 
     salir: (req) => cookie(req, "", 0),
+
+    /**
+     * Rota el secreto de firma: invalida de golpe cualquier cookie ya
+     * emitida (otras pestañas, otros dispositivos) y devuelve una Set-Cookie
+     * nueva para que quien pidió esto quede logueado sin reingresar la
+     * contraseña. No hay registro de sesiones por dispositivo — es la
+     * herramienta que hay sin construir uno.
+     */
+    async cerrarOtrasSesiones(req) {
+      const hash = hashActual();
+      if (!hash) {
+        throw new HttpError(503, "Falta configurar la contraseña");
+      }
+      secreto = crypto.randomBytes(32).toString("hex");
+      escribirAtomico(archivoSecreto, secreto);
+      fs.chmodSync(archivoSecreto, 0o600);
+      const dato = Buffer.from(
+        JSON.stringify({ exp: Date.now() + SESION_MS }),
+      ).toString("base64url");
+      return cookie(req, `${dato}.${firmar(dato, hash)}`, SESION_MS);
+    },
 
     async cambiarContrasena(contrasena) {
       escribirAtomico(
@@ -750,6 +771,22 @@ export const crearServidor = ({ staticDir, dataDir, sinAuth = false }) => {
         }
         if (!auth.sesionValida(req)) {
           throw new HttpError(401, "Necesitás iniciar sesión", { login: true });
+        }
+        if (
+          segmentos[1] === "sesion" &&
+          segmentos[2] === "cerrar-otras" &&
+          segmentos.length === 3
+        ) {
+          if (req.method !== "POST") {
+            throw new HttpError(405, "Método no permitido");
+          }
+          const cookieNueva = await auth.cerrarOtrasSesiones(req);
+          return responderJson(
+            res,
+            200,
+            { ok: true },
+            { "Set-Cookie": cookieNueva },
+          );
         }
       } else if (segmentos[1] === "sesion") {
         return responderJson(res, 200, { ok: true });

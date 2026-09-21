@@ -418,6 +418,38 @@ describe("API con contraseña", () => {
     assert.equal((await entrar("clave-larga-2", "5.5.5.5")).status, 200);
   });
 
+  test("cerrar otras sesiones invalida las demás cookies, no la propia", async () => {
+    const cookieA = cookieDe(await entrar("clave-larga-2", "7.7.7.7"));
+    const cookieB = cookieDe(await entrar("clave-larga-2", "7.7.7.8"));
+    assert.equal((await pedir(cookieA)).status, 200);
+    assert.equal((await pedir(cookieB)).status, 200);
+
+    assert.equal(
+      (
+        await fetch(`${base}/api/sesion/cerrar-otras`, {
+          headers: { Cookie: cookieA },
+        })
+      ).status,
+      405,
+    );
+    assert.equal(
+      (await fetch(`${base}/api/sesion/cerrar-otras`, { method: "POST" }))
+        .status,
+      401,
+    );
+
+    const res = await fetch(`${base}/api/sesion/cerrar-otras`, {
+      method: "POST",
+      headers: { Cookie: cookieA },
+    });
+    assert.equal(res.status, 200);
+    const cookieAnueva = cookieDe(res);
+
+    assert.equal((await pedir(cookieAnueva)).status, 200);
+    assert.equal((await pedir(cookieA)).status, 401);
+    assert.equal((await pedir(cookieB)).status, 401);
+  });
+
   test("logout borra la cookie", async () => {
     const res = await fetch(`${base}/api/logout`, { method: "POST" });
     assert.match(res.headers.get("set-cookie"), /Max-Age=0/);
