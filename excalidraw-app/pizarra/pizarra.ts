@@ -20,6 +20,7 @@ import type {
 } from "@excalidraw/excalidraw/types";
 
 import { appJotaiStore, atom } from "../app-jotai";
+import { collabAPIAtom } from "../collab/Collab";
 import { importFromLocalStorage } from "../data/localStorage";
 
 import { api, cuandoPidaLogin, descendientesDe, hijosDe } from "./api";
@@ -96,6 +97,25 @@ const firma = (elementos: readonly OrderedExcalidrawElement[], fondo: Fondo) =>
 const mensajeDe = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
+/**
+ * Clave de colaboración determinística para una hoja: misma hoja siempre da
+ * la misma clave (no como un link de sala real, que la genera al azar), así
+ * que cualquiera que la abra puede descifrar sin compartir nada aparte. No
+ * es la única defensa del contenido -- eso ya lo hace la contraseña única de
+ * la Pizarra -- es nomás para no reusar la MISMA clave AES en todas las
+ * hojas.
+ */
+const claveDeColaboracion = async (proyecto: string, hoja: string) => {
+  const datos = new TextEncoder().encode(`pizarra-collab:${proyecto}/${hoja}`);
+  const hash = await crypto.subtle.digest("SHA-256", datos);
+  const bytes = new Uint8Array(hash).slice(0, 16);
+  let binario = "";
+  for (const byte of bytes) {
+    binario += String.fromCharCode(byte);
+  }
+  return btoa(binario).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+
 class Pizarra {
   private excalidraw: ExcalidrawImperativeAPI | null = null;
   private etag: string | null = null;
@@ -110,9 +130,47 @@ class Pizarra {
   private alEntrar: (() => void) | null = null;
   private socket: WebSocket | null = null;
   private timerReconexion: ReturnType<typeof setTimeout> | null = null;
+  private salaColaboracionActual: string | null = null;
 
   constructor() {
     cuandoPidaLogin(() => this.actualizar({ necesitaLogin: true }));
+    // Collab (Fase 2) monta y registra collabAPIAtom en su propio efecto de
+    // React, en paralelo a este controlador -- puede no estar listo todavía
+    // cuando se abre la primera hoja. Esta suscripción (fuera de React, el
+    // store de Jotai lo permite) agarra la sala actual apenas aparece.
+    appJotaiStore.sub(collabAPIAtom, () => {
+      const { proyectoId, hojaId } = this.estado;
+      if (proyectoId && hojaId) {
+        this.sincronizarColaboracion(proyectoId, hojaId);
+      }
+    });
+  }
+
+  /**
+   * Arranca (o cambia de) la colaboración en vivo para la hoja indicada. Sala
+   * determinística `${proyecto}/${hoja}` -- no hace falta compartir ningún
+   * link, cualquiera que abra la misma hoja entra a la misma sala.
+   */
+  private sincronizarColaboracion(p: string, h: string) {
+    const collabAPI = appJotaiStore.get(collabAPIAtom);
+    if (!collabAPI) {
+      return;
+    }
+    const sala = `${p}/${h}`;
+    if (sala === this.salaColaboracionActual) {
+      return;
+    }
+    if (collabAPI.isCollaborating()) {
+      collabAPI.stopCollaboration(false);
+    }
+    this.salaColaboracionActual = sala;
+    claveDeColaboracion(p, h).then((roomKey) => {
+      // si cambiaste de hoja mientras se calculaba la clave, esta ya no es
+      // la sala vigente -- no la arranques.
+      if (this.salaColaboracionActual === sala) {
+        collabAPI.startCollaboration({ roomId: sala, roomKey, keepLocalScene: true });
+      }
+    });
   }
 
   get estado() {
@@ -301,6 +359,7 @@ class Pizarra {
       this.hojaActual()?.nombre
     } · Pizarra`;
     this.enviarUnion();
+    this.sincronizarColaboracion(p, h);
   }
 
   // --- aviso instantáneo por WebSocket ----------------------------------------

@@ -22,6 +22,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
+import { Server as SocketIOServer } from "socket.io";
 
 const MAX_BODY = 50 * 1024 * 1024;
 const HISTORIAL_CADA_MS = 10 * 60 * 1000;
@@ -683,7 +684,9 @@ export const crearRelay = () => {
     manejarUpgrade(req, socket, head, auth, sinAuth) {
       const { pathname } = new URL(req.url, "http://x");
       if (pathname !== "/ws") {
-        socket.destroy();
+        // no es nuestro: puede ser para el servidor de socket.io (Fase 2),
+        // que tiene su propio listener de "upgrade" en el mismo http.Server.
+        // Destruir acá lo mataría antes de que socket.io lo vea.
         return;
       }
       if (!sinAuth && !auth.sesionValida(req)) {
@@ -707,6 +710,106 @@ export const crearRelay = () => {
       }
     },
   };
+};
+
+// --- Colaboración en vivo (Fase 2) -------------------------------------------
+//
+// Servidor socket.io que habla el mismo protocolo que excalidraw-room (el
+// original no está vendorizado acá, así que este es una reimplementación
+// mínima contra lo que espera el cliente real de Excalidraw en
+// excalidraw-app/collab/Portal.tsx). Reemplaza a Firebase + el relay
+// aleatorio de excalidraw.com: la sala es determinística (`${proyecto}/${hoja}`,
+// no un id random), el contenido va cifrado extremo a extremo igual que
+// siempre (este servidor nunca ve el texto plano, solo reenvía buffers), y la
+// persistencia durable sigue siendo el guardado REST existente (Fase 0), no
+// este canal.
+export const crearColaboracion = (servidor, auth, sinAuth) => {
+  const io = new SocketIOServer(servidor, {
+    path: "/socket.io/",
+    // reenvía sin buffering extra: los mensajes ya vienen cifrados y son
+    // chicos (deltas de escena), no hace falta compresión.
+    perMessageDeflate: false,
+  });
+
+  io.use((socket, next) => {
+    if (sinAuth || auth.sesionValida(socket.request)) {
+      next();
+      return;
+    }
+    next(new Error("no autenticado"));
+  });
+
+  /** quién sigue a quién, para reemitir "user-follow-room-change". */
+  const seguidoresDe = new Map();
+
+  io.on("connection", (socket) => {
+    socket.emit("init-room");
+
+    socket.on("join-room", (roomId) => {
+      if (typeof roomId !== "string" || !roomId) {
+        return;
+      }
+      socket.join(roomId);
+      const sala = io.sockets.adapter.rooms.get(roomId);
+      const otros = sala ? [...sala].filter((id) => id !== socket.id) : [];
+      if (otros.length === 0) {
+        socket.emit("first-in-room");
+      } else {
+        socket.broadcast.to(roomId).emit("new-user", socket.id);
+      }
+      io.in(roomId).emit("room-user-change", sala ? [...sala] : [socket.id]);
+    });
+
+    socket.on("server-broadcast", (roomId, encryptedData, iv) => {
+      socket.broadcast.to(roomId).emit("client-broadcast", encryptedData, iv);
+    });
+
+    socket.on("server-volatile-broadcast", (roomId, encryptedData, iv) => {
+      socket.volatile.broadcast
+        .to(roomId)
+        .emit("client-broadcast", encryptedData, iv);
+    });
+
+    socket.on("user-follow", (payload) => {
+      if (!payload || typeof payload.userToFollow?.socketId !== "string") {
+        return;
+      }
+      const seguido = payload.userToFollow.socketId;
+      let seguidores = seguidoresDe.get(seguido);
+      if (payload.action === "FOLLOW") {
+        if (!seguidores) {
+          seguidores = new Set();
+          seguidoresDe.set(seguido, seguidores);
+        }
+        seguidores.add(socket.id);
+      } else if (seguidores) {
+        seguidores.delete(socket.id);
+      }
+      io.to(seguido).emit(
+        "user-follow-room-change",
+        seguidores ? [...seguidores] : [],
+      );
+    });
+
+    socket.on("disconnecting", () => {
+      for (const roomId of socket.rooms) {
+        if (roomId === socket.id) {
+          continue;
+        }
+        const sala = io.sockets.adapter.rooms.get(roomId);
+        const restantes = sala
+          ? [...sala].filter((id) => id !== socket.id)
+          : [];
+        socket.to(roomId).emit("room-user-change", restantes);
+      }
+      for (const seguidores of seguidoresDe.values()) {
+        seguidores.delete(socket.id);
+      }
+      seguidoresDe.delete(socket.id);
+    });
+  });
+
+  return io;
 };
 
 // --- HTTP --------------------------------------------------------------------
@@ -963,6 +1066,12 @@ export const crearServidor = ({ staticDir, dataDir, sinAuth = false }) => {
   servidor.on("upgrade", (req, socket, head) =>
     relay.manejarUpgrade(req, socket, head, auth, sinAuth),
   );
+
+  // El cliente de Collab se conecta solo por WebSocket (sin polling), así
+  // que socket.io nunca necesita interceptar pedidos HTTP normales — solo
+  // el evento "upgrade" del mismo http.Server, en paralelo al relay de
+  // arriba (cada uno ignora los upgrades que no son suyos).
+  crearColaboracion(servidor, auth, sinAuth);
 
   return servidor;
 };

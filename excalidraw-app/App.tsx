@@ -1132,7 +1132,13 @@ const ExcalidrawWrapper = () => {
             setErrorMessage={setErrorMessage}
           />
         )}
-        {excalidrawAPI && !isCollabDisabled && (
+        {excalidrawAPI && (!isCollabDisabled || PIZARRA_ENABLED) && (
+          // En Pizarra, isCollabDisabled sigue en true a propósito: oculta
+          // los botones/diálogos de "compartir" de excalidraw.com (no
+          // aplican, no hay links de sala manuales acá). Igual montamos
+          // <Collab> para que pizarra.ts pueda arrancar la colaboración en
+          // vivo por su cuenta, con la sala determinística de la hoja
+          // abierta -- ver sincronizarColaboracion en pizarra.ts.
           <Collab excalidrawAPI={excalidrawAPI} />
         )}
 

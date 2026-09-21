@@ -81,7 +81,12 @@ import {
   loadFromFirebase,
   saveFilesToFirebase,
   saveToFirebase,
-} from "../data/firebase";
+  // En modo Pizarra este archivo reemplaza a ../data/firebase con la misma
+  // forma exacta (mismos 5 nombres) pero sin Firebase: ver el comentario de
+  // cabecera de pizarraCollab.ts para el porqué. Si algún día se separa el
+  // build normal de excalidraw.com del de la Pizarra, esto puede volver a
+  // apuntar condicionalmente a ../data/firebase para ese otro modo.
+} from "../data/pizarraCollab";
 import {
   importUsernameFromLocalStorage,
   saveUsernameToLocalStorage,
@@ -479,7 +484,14 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   private fallbackInitializationHandler: null | (() => any) = null;
 
   startCollaboration = async (
-    existingRoomLinkData: null | { roomId: string; roomKey: string },
+    existingRoomLinkData: null | {
+      roomId: string;
+      roomKey: string;
+      /** Pizarra: la sala es determinística (proyecto/hoja), no un link
+       * compartido — lo que ya pintó pizarra.iniciar() es la escena
+       * correcta, así que no hay que descartarla como con un link real. */
+      keepLocalScene?: boolean;
+    },
   ) => {
     if (!this.state.username) {
       import("@excalidraw/random-username").then(({ getRandomUsername }) => {
@@ -530,10 +542,18 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.fallbackInitializationHandler = fallbackInitializationHandler;
 
     try {
+      // En modo Pizarra el servidor de colaboración vive en el mismo origen
+      // (pizarra-server, ver crearColaboracion en server.mjs) y solo acepta
+      // websocket puro -- sin polling, porque ese mismo puerto ya sirve la
+      // API REST normal y no queremos que socket.io intercepte esos pedidos.
+      const pizarraModo = import.meta.env.VITE_APP_PIZARRA === "true";
       this.portal.socket = this.portal.open(
-        socketIOClient(import.meta.env.VITE_APP_WS_SERVER_URL, {
-          transports: ["websocket", "polling"],
-        }),
+        socketIOClient(
+          pizarraModo
+            ? window.location.origin
+            : import.meta.env.VITE_APP_WS_SERVER_URL,
+          { transports: pizarraModo ? ["websocket"] : ["websocket", "polling"] },
+        ),
         roomId,
         roomKey,
       );
@@ -545,7 +565,13 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       return null;
     }
 
-    if (existingRoomLinkData) {
+    if (existingRoomLinkData?.keepLocalScene) {
+      // Pizarra: la sala es determinística (proyecto/hoja) y lo que ya
+      // pintó pizarra.iniciar() ES el estado correcto — ni resetear la
+      // escena (eso es para un link de sala real) ni tocar el status de
+      // las imágenes (eso dispara un "pending" innecesario en cada cambio
+      // de hoja, sin Firebase de por medio no hace nada útil).
+    } else if (existingRoomLinkData) {
       // when joining existing room, don't merge it with current scene data
       this.excalidrawAPI.resetScene();
     } else {
@@ -717,7 +743,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   }:
     | {
         fetchScene: true;
-        roomLinkData: { roomId: string; roomKey: string } | null;
+        roomLinkData: {
+          roomId: string;
+          roomKey: string;
+          keepLocalScene?: boolean;
+        } | null;
       }
     | { fetchScene: false; roomLinkData?: null }) => {
     clearTimeout(this.socketInitializationTimer!);
@@ -726,6 +756,13 @@ class Collab extends PureComponent<CollabProps, CollabState> {
         "connect_error",
         this.fallbackInitializationHandler,
       );
+    }
+    if (roomLinkData?.keepLocalScene) {
+      // Pizarra: nunca hubo nada que buscar en Firebase, y lo que ya está
+      // pintado (pizarra.iniciar(), o lo que llegó por el socket de un par)
+      // es el estado correcto — no resetear.
+      this.portal.socketInitialized = true;
+      return null;
     }
     if (fetchScene && roomLinkData && this.portal.socket) {
       this.excalidrawAPI.resetScene();
