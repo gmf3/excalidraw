@@ -32,6 +32,15 @@ const escena = (texto) =>
     files: {},
   });
 
+const escenaDeElementos = (elementos) =>
+  JSON.stringify({
+    type: "excalidraw",
+    version: 2,
+    elements: elementos,
+    appState: {},
+    files: {},
+  });
+
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 test("slug normaliza tildes, espacios y símbolos", () => {
@@ -50,7 +59,7 @@ describe("API sin auth", () => {
   });
   after(() => server.close());
 
-  test("proyecto con hojas: crear, leer, guardar y conflicto", async () => {
+  test("proyecto con hojas: crear, leer y guardar", async () => {
     let res = await fetch(`${base}/api/proyectos`, {
       method: "POST",
       body: JSON.stringify({
@@ -87,15 +96,6 @@ describe("API sin auth", () => {
     const etag2 = (await res.json()).etag;
     assert.notEqual(etag2, etag);
 
-    // un guardado con el etag viejo no pisa lo nuevo
-    res = await fetch(url, {
-      method: "PUT",
-      headers: { "If-Match": etag },
-      body: escena("pisado"),
-    });
-    assert.equal(res.status, 409);
-    assert.equal((await res.json()).etag, etag2);
-
     const enDisco = JSON.parse(
       fs.readFileSync(
         path.join(dataDir, "chemovetgestion", "front.excalidraw"),
@@ -110,6 +110,63 @@ describe("API sin auth", () => {
       ).length,
       1,
     );
+  });
+
+  test("un guardado con etag viejo fusiona en vez de rechazar", async () => {
+    const hojas = `${base}/api/proyectos`;
+    const proyecto = await (
+      await fetch(hojas, {
+        method: "POST",
+        body: JSON.stringify({ nombre: "Fusion", hojas: ["tablero"] }),
+      })
+    ).json();
+    const url = `${base}/api/proyectos/${proyecto.id}/hojas/tablero`;
+
+    // Guillermo entra y guarda el elemento "a" (version 1) y "b" (version 1).
+    let res = await fetch(url);
+    const etagInicial = res.headers.get("etag");
+    res = await fetch(url, {
+      method: "PUT",
+      headers: { "If-Match": etagInicial },
+      body: escenaDeElementos([
+        { id: "a", type: "text", text: "uno", version: 1, versionNonce: 1 },
+        { id: "b", type: "text", text: "dos", version: 1, versionNonce: 1 },
+      ]),
+    });
+    assert.equal(res.status, 200);
+    const etagDeGuillermo = (await res.json()).etag;
+
+    // Federico había cargado la hoja ANTES de eso (etagInicial, sin "a" ni
+    // "b") y ahora guarda su propia versión de "a" en version 2 — no vio "b".
+    res = await fetch(url, {
+      method: "PUT",
+      headers: { "If-Match": etagInicial },
+      body: escenaDeElementos([
+        {
+          id: "a",
+          type: "text",
+          text: "uno-editado-por-federico",
+          version: 2,
+          versionNonce: 1,
+        },
+      ]),
+    });
+    assert.equal(res.status, 200);
+    const { etag: etagFusionado, fusionado } = await res.json();
+    assert.equal(fusionado, true);
+    assert.notEqual(etagFusionado, etagDeGuillermo);
+
+    const final = JSON.parse(
+      fs.readFileSync(
+        path.join(dataDir, proyecto.id, "tablero.excalidraw"),
+        "utf8",
+      ),
+    );
+    const porId = Object.fromEntries(final.elements.map((el) => [el.id, el]));
+    // "a" quedó en la edición de Federico porque tiene mayor version...
+    assert.equal(porId.a.text, "uno-editado-por-federico");
+    // ...y "b" (que Federico nunca vio) no se perdió.
+    assert.equal(porId.b.text, "dos");
   });
 
   test("una edición externa del archivo cambia el etag", async () => {
@@ -323,7 +380,7 @@ describe("API sin auth", () => {
     const { proyectos } = await (await fetch(`${base}/api/proyectos`)).json();
     assert.deepEqual(
       proyectos.map((p) => p.id),
-      ["chemovetgestion", "solo"],
+      ["chemovetgestion", "fusion", "solo"],
     );
     assert.ok(proyectos[0].actualizado);
   });

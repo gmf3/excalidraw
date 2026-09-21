@@ -165,6 +165,8 @@ export const api = {
       : { escena: datos, etag: res.headers.get("etag")! };
   },
 
+  /** El servidor fusiona con cambios ajenos en vez de rechazar; `fusionado`
+   * avisa que la escena guardada ya no es exactamente la que se mandó. */
   guardarHoja: async (
     p: string,
     h: string,
@@ -173,11 +175,11 @@ export const api = {
     keepalive = false,
   ) =>
     (
-      await pedir<{ etag: string }>(rutaHoja(p, h), {
+      await pedir<{ etag: string; fusionado?: boolean }>(rutaHoja(p, h), {
         method: "PUT",
         body: escena,
         headers: { "If-Match": etag },
         keepalive,
       })
-    ).datos!.etag,
+    ).datos!,
 };

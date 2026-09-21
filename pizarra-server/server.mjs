@@ -385,7 +385,7 @@ export const crearAlmacen = (dataDir) => {
     }
   };
 
-  const validarEscena = (texto) => {
+  const parsearEscena = (texto) => {
     let escena;
     try {
       escena = JSON.parse(texto);
@@ -395,7 +395,44 @@ export const crearAlmacen = (dataDir) => {
     if (escena?.type !== "excalidraw" || !Array.isArray(escena.elements)) {
       throw new HttpError(400, "La escena no tiene formato Excalidraw");
     }
-    return texto.endsWith("\n") ? texto : `${texto}\n`;
+    return escena;
+  };
+
+  const serializarEscena = (escena) => `${JSON.stringify(escena, null, 2)}\n`;
+
+  /**
+   * Fusiona dos listas de elementos por id, igual que `reconcileElements` de
+   * @excalidraw/excalidraw (mismo criterio de desempate: gana la version mas
+   * alta, y en empate la de versionNonce mas bajo) pero reimplementado acá
+   * liviano porque ese paquete es para el bundle del browser, no para este
+   * server. No reordena por índice fraccional: el único costo es que el
+   * z-order de un elemento recién fusionado puede no ser el ideal, algo
+   * cosmético, nunca pérdida de datos.
+   */
+  const fusionarElementos = (actuales, entrantes) => {
+    const mapaActuales = new Map(actuales.map((el) => [el.id, el]));
+    const agregados = new Set();
+    const resultado = [];
+    for (const entrante of entrantes) {
+      if (agregados.has(entrante.id)) {
+        continue;
+      }
+      const actual = mapaActuales.get(entrante.id);
+      const ganaElActual =
+        actual &&
+        (actual.version > entrante.version ||
+          (actual.version === entrante.version &&
+            actual.versionNonce <= entrante.versionNonce));
+      resultado.push(ganaElActual ? actual : entrante);
+      agregados.add(entrante.id);
+    }
+    for (const actual of actuales) {
+      if (!agregados.has(actual.id)) {
+        resultado.push(actual);
+        agregados.add(actual.id);
+      }
+    }
+    return resultado;
   };
 
   const nuevaHoja = (p, meta, nombre, escena, padre = null) => {
@@ -406,7 +443,7 @@ export const crearAlmacen = (dataDir) => {
     }
     escribirAtomico(
       archivoHoja(p, id),
-      escena ? validarEscena(escena) : escenaVacia(),
+      escena ? serializarEscena(parsearEscena(escena)) : escenaVacia(),
     );
     const hoja = { id, nombre, padre };
     meta.hojas.push(hoja);
@@ -541,16 +578,26 @@ export const crearAlmacen = (dataDir) => {
       if (!ifMatch) {
         throw new HttpError(428, "Falta If-Match");
       }
-      const contenido = validarEscena(texto);
+      const entrante = parsearEscena(texto);
       const actual = this.leerHoja(p, h);
+      let final = entrante;
+      let fusionado = false;
       if (ifMatch !== actual.etag) {
-        throw new HttpError(409, "La hoja cambió desde la última carga", {
-          etag: actual.etag,
-        });
+        // alguien más (otra pestaña, otro dispositivo, un agente) guardó en
+        // el medio: en vez de rechazar con 409 y obligar a bifurcar una copia
+        // "(conflicto)", fusiona elemento por elemento — así dos personas
+        // editando la misma hoja a la vez no se pisan.
+        const escenaActual = parsearEscena(actual.contenido.toString("utf8"));
+        final = {
+          ...entrante,
+          elements: fusionarElementos(escenaActual.elements, entrante.elements),
+        };
+        fusionado = true;
       }
       guardarHistorial(p, h);
+      const contenido = serializarEscena(final);
       escribirAtomico(archivoHoja(p, h), contenido);
-      return { etag: etagDe(Buffer.from(contenido)) };
+      return { etag: etagDe(Buffer.from(contenido)), fusionado };
     },
   };
 };
@@ -651,13 +698,13 @@ const manejarApi = async (req, res, almacen, segmentos) => {
     }
     if (metodo === "PUT") {
       const texto = await leerCuerpo(req);
-      const { etag } = almacen.guardarHoja(
+      const { etag, fusionado } = almacen.guardarHoja(
         p,
         h,
         texto,
         req.headers["if-match"],
       );
-      return responderJson(res, 200, { etag }, { ETag: etag });
+      return responderJson(res, 200, { etag, fusionado }, { ETag: etag });
     }
     if (metodo === "PATCH") {
       const cambios = await leerJson(req);

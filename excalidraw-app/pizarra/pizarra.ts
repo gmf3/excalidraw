@@ -22,13 +22,7 @@ import type {
 import { appJotaiStore, atom } from "../app-jotai";
 import { importFromLocalStorage } from "../data/localStorage";
 
-import {
-  api,
-  cuandoPidaLogin,
-  descendientesDe,
-  hijosDe,
-  PizarraApiError,
-} from "./api";
+import { api, cuandoPidaLogin, descendientesDe, hijosDe } from "./api";
 
 import type { Hoja, Proyecto } from "./api";
 
@@ -62,7 +56,7 @@ export const pizarraAtom = atom<EstadoPizarra>({
 });
 
 const GUARDAR_TRAS_MS = 800;
-const REVISAR_CADA_MS = 20_000;
+const REVISAR_CADA_MS = 5_000;
 const REINTENTAR_MS = 5_000;
 
 type Vista = Pick<AppState, "scrollX" | "scrollY" | "zoom">;
@@ -447,17 +441,43 @@ class Pizarra {
     );
     this.actualizar({ guardado: "guardando" });
     try {
-      this.etag = await api.guardarHoja(p, h, texto, this.etag, keepalive);
-      this.firmaGuardada = firmaSubida;
+      const { etag, fusionado } = await api.guardarHoja(
+        p,
+        h,
+        texto,
+        this.etag,
+        keepalive,
+      );
+      // si nadie tocó el lienzo desde que armamos `texto`, podemos aplicar la
+      // versión ya fusionada; si Federico siguió dibujando mientras el
+      // pedido viajaba, no la pisamos — el próximo guardado o `revisarRemoto`
+      // la va a traer igual, sin perder lo que está dibujando ahora.
+      const sinCambiosDesdeElEnvio =
+        firma(
+          excalidraw.getSceneElementsIncludingDeleted(),
+          excalidraw.getAppState(),
+        ) === firmaSubida;
+      const combinado =
+        fusionado && sinCambiosDesdeElEnvio && !keepalive
+          ? await api.leerHoja(p, h)
+          : null;
+      if (
+        combinado &&
+        this.estado.proyectoId === p &&
+        this.estado.hojaId === h
+      ) {
+        this.aplicarEscena(combinado.escena, combinado.etag, this.vistaActual());
+        this.avisar("Se combinó con cambios hechos en otro lugar.");
+      } else {
+        this.etag = etag;
+        this.firmaGuardada = firmaSubida;
+      }
       this.actualizar({
         guardado: this.hayCambios() ? "pendiente" : "guardado",
         error: null,
       });
       return true;
     } catch (error) {
-      if (error instanceof PizarraApiError && error.status === 409) {
-        return this.resolverConflicto(p, h, texto);
-      }
       this.actualizar({ guardado: "error", error: mensajeDe(error) });
       this.reintentarLuego();
       return false;
@@ -474,41 +494,6 @@ class Pizarra {
         this.guardarPendiente();
       }
     }, REINTENTAR_MS);
-  }
-
-  /** La hoja cambió en otro lado: la versión local pasa a una hoja nueva. */
-  private async resolverConflicto(p: string, h: string, textoLocal: string) {
-    const hora = new Date().toLocaleTimeString("es-AR", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-    const nombre = `${this.hojaActual()?.nombre ?? h} (conflicto ${hora})`;
-    const padre =
-      this.proyectoActual()?.hojas.find((x) => x.id === h)?.padre ?? null;
-    try {
-      const { proyecto } = await api.crearHoja(
-        p,
-        nombre,
-        JSON.parse(textoLocal),
-        padre,
-      );
-      this.reemplazarProyecto(proyecto);
-      const servidor = await api.leerHoja(p, h);
-      if (servidor) {
-        this.aplicarEscena(servidor.escena, servidor.etag, this.vistaActual());
-      }
-      this.actualizar({ guardado: "guardado", error: null });
-      this.avisar(
-        `Esta hoja cambió en otro dispositivo. Tu versión quedó guardada en «${nombre}».`,
-        true,
-      );
-      return true;
-    } catch (error) {
-      this.actualizar({ guardado: "error", error: mensajeDe(error) });
-      this.reintentarLuego();
-      return false;
-    }
   }
 
   /** Al cerrar o esconder la pestaña: intento rápido sin esperar respuesta. */
