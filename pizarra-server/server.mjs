@@ -21,6 +21,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { WebSocket, WebSocketServer } from "ws";
 
 const MAX_BODY = 50 * 1024 * 1024;
 const HISTORIAL_CADA_MS = 10 * 60 * 1000;
@@ -602,6 +603,112 @@ export const crearAlmacen = (dataDir) => {
   };
 };
 
+// --- Relay WebSocket ----------------------------------------------------------
+//
+// Aviso en vivo de que una hoja cambió, para no depender del polling de 5s.
+// No es la fuente de verdad: si el socket se cae o no llega a conectar, todo
+// sigue funcionando igual con el polling existente (revisarRemoto).
+
+export const crearRelay = () => {
+  const wss = new WebSocketServer({ noServer: true });
+  const salas = new Map();
+
+  const claveDe = (proyecto, hoja) => `${proyecto}/${hoja}`;
+
+  const salirDeSala = (ws) => {
+    if (!ws.sala) {
+      return;
+    }
+    const set = salas.get(ws.sala);
+    if (set) {
+      set.delete(ws);
+      if (set.size === 0) {
+        salas.delete(ws.sala);
+      }
+    }
+    ws.sala = null;
+  };
+
+  wss.on("connection", (ws) => {
+    ws.isAlive = true;
+    ws.sala = null;
+
+    ws.on("pong", () => {
+      ws.isAlive = true;
+    });
+
+    ws.on("message", (datos) => {
+      let mensaje;
+      try {
+        mensaje = JSON.parse(datos.toString());
+      } catch {
+        return;
+      }
+      if (
+        mensaje?.tipo !== "unirse" ||
+        typeof mensaje.proyecto !== "string" ||
+        !mensaje.proyecto ||
+        typeof mensaje.hoja !== "string" ||
+        !mensaje.hoja
+      ) {
+        return;
+      }
+      salirDeSala(ws);
+      const clave = claveDe(mensaje.proyecto, mensaje.hoja);
+      let set = salas.get(clave);
+      if (!set) {
+        set = new Set();
+        salas.set(clave, set);
+      }
+      set.add(ws);
+      ws.sala = clave;
+    });
+
+    ws.on("close", () => salirDeSala(ws));
+  });
+
+  const intervaloLatido = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (ws.isAlive === false) {
+        ws.terminate();
+        continue;
+      }
+      ws.isAlive = false;
+      ws.ping();
+    }
+  }, 30000);
+  intervaloLatido.unref();
+
+  return {
+    manejarUpgrade(req, socket, head, auth, sinAuth) {
+      const { pathname } = new URL(req.url, "http://x");
+      if (pathname !== "/ws") {
+        socket.destroy();
+        return;
+      }
+      if (!sinAuth && !auth.sesionValida(req)) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws));
+    },
+
+    avisarCambio(proyecto, hoja) {
+      const mensaje = JSON.stringify({ tipo: "cambio", proyecto, hoja });
+      const set = salas.get(claveDe(proyecto, hoja));
+      if (!set) {
+        return;
+      }
+      for (const ws of set) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(mensaje);
+        }
+      }
+    },
+  };
+};
+
 // --- HTTP --------------------------------------------------------------------
 
 const leerCuerpo = (req, maximo = MAX_BODY) =>
@@ -639,7 +746,7 @@ const responderJson = (res, status, cuerpo, headers = {}) => {
   res.end(JSON.stringify(cuerpo));
 };
 
-const manejarApi = async (req, res, almacen, segmentos) => {
+const manejarApi = async (req, res, almacen, segmentos, avisarCambio) => {
   const [, recurso, p, sub, h, ...resto] = segmentos;
   const metodo = req.method;
   if (recurso !== "proyectos" || resto.length) {
@@ -704,6 +811,7 @@ const manejarApi = async (req, res, almacen, segmentos) => {
         texto,
         req.headers["if-match"],
       );
+      avisarCambio(p, h);
       return responderJson(res, 200, { etag, fusionado }, { ETag: etag });
     }
     if (metodo === "PATCH") {
@@ -796,9 +904,10 @@ const ACCIONES_DE_SESION = new Set(["sesion", "login", "logout"]);
 export const crearServidor = ({ staticDir, dataDir, sinAuth = false }) => {
   const almacen = crearAlmacen(dataDir);
   const auth = crearAuth(dataDir);
+  const relay = crearRelay();
   const raizEstatica = path.resolve(staticDir);
 
-  return http.createServer(async (req, res) => {
+  const servidor = http.createServer(async (req, res) => {
     const segmentos = new URL(req.url, "http://x").pathname
       .split("/")
       .filter(Boolean);
@@ -838,7 +947,7 @@ export const crearServidor = ({ staticDir, dataDir, sinAuth = false }) => {
       } else if (segmentos[1] === "sesion") {
         return responderJson(res, 200, { ok: true });
       }
-      await manejarApi(req, res, almacen, segmentos);
+      await manejarApi(req, res, almacen, segmentos, relay.avisarCambio);
     } catch (error) {
       if (error instanceof HttpError) {
         return responderJson(res, error.status, {
@@ -850,6 +959,12 @@ export const crearServidor = ({ staticDir, dataDir, sinAuth = false }) => {
       responderJson(res, 500, { error: "Error interno" });
     }
   });
+
+  servidor.on("upgrade", (req, socket, head) =>
+    relay.manejarUpgrade(req, socket, head, auth, sinAuth),
+  );
+
+  return servidor;
 };
 
 // --- Línea de comandos -------------------------------------------------------

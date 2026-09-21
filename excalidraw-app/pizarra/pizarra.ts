@@ -108,6 +108,8 @@ class Pizarra {
   private turno = 0;
   private inicio: Promise<ExcalidrawInitialDataState> | null = null;
   private alEntrar: (() => void) | null = null;
+  private socket: WebSocket | null = null;
+  private timerReconexion: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     cuandoPidaLogin(() => this.actualizar({ necesitaLogin: true }));
@@ -298,6 +300,54 @@ class Pizarra {
     document.title = `${this.proyectoActual()?.nombre} › ${
       this.hojaActual()?.nombre
     } · Pizarra`;
+    this.enviarUnion();
+  }
+
+  // --- aviso instantáneo por WebSocket ----------------------------------------
+
+  private conectarSocket() {
+    const protocolo = location.protocol === "https:" ? "wss:" : "ws:";
+    const url = `${protocolo}//${location.host}/ws`;
+    this.socket = new WebSocket(url);
+    this.socket.onopen = () => {
+      this.enviarUnion();
+    };
+    this.socket.onmessage = (event) => {
+      let mensaje: any;
+      try {
+        mensaje = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (
+        mensaje?.tipo === "cambio" &&
+        mensaje.proyecto === this.estado.proyectoId &&
+        mensaje.hoja === this.estado.hojaId
+      ) {
+        this.revisarRemoto();
+      }
+    };
+    this.socket.onclose = () => this.programarReconexion();
+    this.socket.onerror = () => this.programarReconexion();
+  }
+
+  private programarReconexion() {
+    if (this.timerReconexion) {
+      return;
+    }
+    this.timerReconexion = setTimeout(() => {
+      this.timerReconexion = null;
+      this.conectarSocket();
+    }, 3000);
+  }
+
+  private enviarUnion() {
+    const { proyectoId, hojaId } = this.estado;
+    if (this.socket?.readyState === WebSocket.OPEN && proyectoId && hojaId) {
+      this.socket.send(
+        JSON.stringify({ tipo: "unirse", proyecto: proyectoId, hoja: hojaId }),
+      );
+    }
   }
 
   private nombreEscena() {
@@ -557,7 +607,22 @@ class Pizarra {
 
   iniciarRevision() {
     const id = setInterval(() => this.revisarRemoto(), REVISAR_CADA_MS);
-    return () => clearInterval(id);
+    this.conectarSocket();
+    return () => {
+      clearInterval(id);
+      if (this.timerReconexion) {
+        clearTimeout(this.timerReconexion);
+        this.timerReconexion = null;
+      }
+      if (this.socket) {
+        // si no se desengancha, el "close" que dispara este mismo cierre
+        // (async) reprograma una reconexión zombie después de desmontar.
+        this.socket.onclose = null;
+        this.socket.onerror = null;
+        this.socket.close();
+        this.socket = null;
+      }
+    };
   }
 
   // --- acciones del panel ----------------------------------------------------

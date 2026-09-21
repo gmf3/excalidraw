@@ -18,6 +18,8 @@ FROM node:24-alpine
 
 WORKDIR /app
 COPY pizarra-server/server.mjs ./
+COPY pizarra-server/package.json ./
+RUN npm install --omit=dev
 COPY --from=build /opt/node_app/excalidraw-app/build ./build
 
 ENV NODE_ENV=production \
