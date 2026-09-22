@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -15,7 +16,7 @@ const PUBLIC_URL = (
 ).replace(/\/$/, "");
 const almacen = crearAlmacen(DATA_DIR);
 
-const instructions = `Edita la Pizarra persistente de pc3 directamente; no uses el navegador. Antes de escribir, lista proyectos y hojas, lee la hoja destino y usa preview_sheet cuando necesites inspeccion visual. write_diagram acepta elementos abreviados de Excalidraw y protege las escrituras con ETag. Usa saltos de linea JSON \\n; nunca uses etiquetas <br>. Las operaciones reemplazan o amplian una hoja real y son visibles en https://pizarra.ultragfe.uk.`;
+const instructions = `Edita la Pizarra persistente de pc3 directamente; no uses el navegador. Antes de escribir, lista proyectos y hojas, lee la hoja destino y usa preview_sheet cuando necesites inspeccion visual. write_diagram acepta elementos abreviados de Excalidraw y protege las escrituras con ETag. Para mover, recolorear o cambiar el texto de algo que ya existe (por ejemplo una tarjeta de Kanban que cambia de columna), usa patch_elements en vez de write_scene: write_scene te obliga a retipear la escena entera y es facil romper el containerId/boundElements/groupIds de un elemento que no pensabas tocar. Usa saltos de linea JSON \\n; nunca uses etiquetas <br>. Las operaciones reemplazan o amplian una hoja real y son visibles en https://pizarra.ultragfe.uk.`;
 
 const server = new McpServer(
   { name: "pizarra-pc3", version: "0.1.0" },
@@ -356,6 +357,113 @@ server.registerTool(
         current.etag,
       );
       const response = { ok: true, etag, url: urlFor(projectId, sheetId) };
+      return textResult(response, response);
+    } catch (error) {
+      return fail(error);
+    }
+  },
+);
+
+const CAMPOS_PATCHEABLES = [
+  "x",
+  "y",
+  "width",
+  "height",
+  "backgroundColor",
+  "strokeColor",
+  "text",
+];
+
+server.registerTool(
+  "patch_elements",
+  {
+    description:
+      "Modifica campos puntuales (posicion, tamano, color, texto) de elementos YA EXISTENTES por id, sin tocar nada mas de la escena. A diferencia de write_scene, que te obliga a retipear la escena entera, patch_elements nunca puede romper containerId/boundElements/groupIds de un elemento que no pediste tocar: el servidor edita el objeto guardado en el lugar, no un JSON que reconstruiste vos. Usala siempre que el cambio sea mover, recolorear o cambiar el texto de algo que ya existe (por ejemplo, mover una tarjeta entre columnas de un Kanban); reserva write_diagram/write_scene para crear contenido nuevo o reestructurar el dibujo entero.",
+    inputSchema: z.object({
+      project: z.string(),
+      sheet: z.string(),
+      expected_etag: z.string().optional(),
+      patches: z
+        .array(
+          z
+            .object({
+              id: z.string(),
+              x: z.number().optional(),
+              y: z.number().optional(),
+              width: z.number().optional(),
+              height: z.number().optional(),
+              backgroundColor: z.string().optional(),
+              strokeColor: z.string().optional(),
+              text: z.string().optional(),
+            })
+            .refine(
+              (patch) =>
+                CAMPOS_PATCHEABLES.some((campo) => patch[campo] !== undefined),
+              { message: "cada patch necesita al menos un campo ademas de id" },
+            ),
+        )
+        .min(1),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  async ({
+    project: projectId,
+    sheet: sheetId,
+    expected_etag: expectedEtag,
+    patches,
+  }) => {
+    try {
+      const current = readScene(projectId, sheetId);
+      if (expectedEtag && expectedEtag !== current.etag) {
+        throw new Error(`ETag desactualizado. Actual: ${current.etag}`);
+      }
+      if (patches.some((patch) => /<br\s*\/?>/i.test(patch.text ?? ""))) {
+        throw new Error("No uses <br>; usa \\n dentro del texto JSON");
+      }
+      const porId = new Map(
+        current.scene.elements.map((element) => [element.id, element]),
+      );
+      const idsVistos = new Set();
+      const tocados = [];
+      for (const patch of patches) {
+        if (idsVistos.has(patch.id)) {
+          throw new Error(`Id repetido en la misma llamada: ${patch.id}`);
+        }
+        idsVistos.add(patch.id);
+        const element = porId.get(patch.id);
+        if (!element || element.isDeleted) {
+          throw new Error(`Elemento inexistente o borrado: ${patch.id}`);
+        }
+        if (patch.text !== undefined && element.type !== "text") {
+          throw new Error(
+            `${patch.id} es "${element.type}", no "text": no acepta el campo text`,
+          );
+        }
+        for (const campo of CAMPOS_PATCHEABLES) {
+          if (patch[campo] !== undefined) {
+            element[campo] = patch[campo];
+          }
+        }
+        element.version += 1;
+        element.versionNonce = crypto.randomInt(1, 2_147_483_647);
+        element.updated = Date.now();
+        tocados.push(patch.id);
+      }
+      const next = { ...current.scene, source: "pizarra-mcp" };
+      const { etag } = almacen.guardarHoja(
+        projectId,
+        sheetId,
+        JSON.stringify(next, null, 2),
+        current.etag,
+      );
+      const response = {
+        ok: true,
+        project: projectId,
+        sheet: sheetId,
+        patched: tocados,
+        etag,
+        url: urlFor(projectId, sheetId),
+      };
       return textResult(response, response);
     } catch (error) {
       return fail(error);

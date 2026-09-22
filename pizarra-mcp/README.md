@@ -15,10 +15,13 @@ Se inspira en [`excalidraw/excalidraw-mcp`](https://github.com/excalidraw/excali
 - `create_sheet`
 - `write_diagram`
 - `write_scene`
+- `patch_elements` — mueve, recolorea o retextea elementos existentes por id, sin retipear la escena
 - `rename_sheet`
 - `move_sheet` — baja una hoja bajo otra o la sube nuevamente a la raíz
 
 `write_diagram` recibe figuras abreviadas y las convierte a elementos Excalidraw editables. Los textos usan `\n` para saltos de línea; `<br>` se rechaza para impedir que aparezca como texto literal. Figuras y rótulos se agrupan sin bindings internos, y las flechas se guardan como conectores libres: así abrir una hoja no dispara normalizaciones automáticas ni falsos conflictos. Los bloques con `label` ajustan su altura al texto; `fitToText:false` conserva una altura explícita cuando el diseño lo necesita. Los rótulos de flechas quedan centrados sobre el conector y llevan una máscara blanca agrupada detrás para cortar la línea sin bindings.
+
+`patch_elements` es la herramienta correcta para mover una tarjeta entre columnas, recolorearla o cambiarle el texto: edita los campos pedidos (`x`, `y`, `width`, `height`, `backgroundColor`, `strokeColor`, `text`) directamente sobre el elemento ya guardado en el servidor, sin pasar por un JSON que el cliente reconstruye. `write_scene` en cambio exige retipear la escena entera, y un elemento que el cliente no pensaba tocar —por ejemplo un texto nativo dentro de un rectángulo, con `containerId`/`boundElements`— puede perder esa relación si se reconstruye a mano sin copiar esos campos. `read_sheet` en modo compacto ya expone `containerId`, `boundElements` y `groupIds` de cada elemento para poder decidir con qué herramienta conviene editarlo.
 
 ## Ejecutar localmente
 

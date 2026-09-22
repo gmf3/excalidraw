@@ -111,3 +111,134 @@ test("MCP crea y lee una hoja persistente sin navegador", async (t) => {
     true,
   );
 });
+
+test("patch_elements mueve y recolorea sin romper containerId/boundElements/groupIds ajenos", async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "pizarra-mcp-test-"));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  crearAlmacen(dataDir).crearProyecto("Sistema de pedidos", ["Pendientes"]);
+
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [path.join(here, "server.mjs")],
+    env: {
+      ...process.env,
+      PIZARRA_DATA_DIR: dataDir,
+      PIZARRA_PUBLIC_URL: "https://pizarra.example",
+    },
+    stderr: "pipe",
+  });
+  const client = new Client({ name: "pizarra-mcp-test", version: "1.0.0" });
+  t.after(async () => client.close());
+  await client.connect(transport);
+
+  // Un texto NATIVO dentro de un rectángulo (containerId/boundElements reales,
+  // no el patrón de label agrupado de elementsFromSkeleton): es justo lo que
+  // write_scene rompía cuando el agente reconstruía la escena a mano.
+  const escenaInicial = {
+    type: "excalidraw",
+    version: 2,
+    source: "test",
+    elements: [
+      {
+        id: "tarjeta",
+        type: "rectangle",
+        x: 10,
+        y: 10,
+        width: 200,
+        height: 80,
+        backgroundColor: "#fef3c7",
+        strokeColor: "#d97706",
+        groupIds: ["grupo-tarjeta"],
+        boundElements: [{ id: "titulo", type: "text" }],
+        version: 1,
+        versionNonce: 1,
+        isDeleted: false,
+      },
+      {
+        id: "titulo",
+        type: "text",
+        x: 20,
+        y: 30,
+        width: 180,
+        height: 25,
+        text: "T080-011",
+        containerId: "tarjeta",
+        groupIds: ["grupo-tarjeta"],
+        boundElements: [],
+        version: 1,
+        versionNonce: 1,
+        isDeleted: false,
+      },
+    ],
+    appState: { viewBackgroundColor: "#ffffff" },
+    files: {},
+  };
+  const escrita = await client.callTool({
+    name: "write_scene",
+    arguments: {
+      project: "sistema-de-pedidos",
+      sheet: "pendientes",
+      scene: JSON.stringify(escenaInicial),
+    },
+  });
+  assert.equal(escrita.isError, undefined);
+
+  const patched = await client.callTool({
+    name: "patch_elements",
+    arguments: {
+      project: "sistema-de-pedidos",
+      sheet: "pendientes",
+      patches: [
+        { id: "tarjeta", x: 300, backgroundColor: "#dcfce7" },
+        { id: "titulo", x: 310, text: "T080-011 (listo)" },
+      ],
+    },
+  });
+  assert.equal(patched.isError, undefined);
+  assert.deepEqual(JSON.parse(patched.content[0].text).patched, [
+    "tarjeta",
+    "titulo",
+  ]);
+
+  const releida = await client.callTool({
+    name: "read_sheet",
+    arguments: { project: "sistema-de-pedidos", sheet: "pendientes", full: true },
+  });
+  const escena = JSON.parse(releida.content[0].text).scene;
+  const tarjeta = escena.elements.find((el) => el.id === "tarjeta");
+  const titulo = escena.elements.find((el) => el.id === "titulo");
+
+  assert.equal(tarjeta.x, 300, "el campo pedido sí cambió");
+  assert.equal(tarjeta.backgroundColor, "#dcfce7");
+  assert.equal(titulo.x, 310);
+  assert.equal(titulo.text, "T080-011 (listo)");
+  // Lo que NO se pidió tocar sigue byte a byte igual: el binding nativo sobrevive.
+  assert.equal(tarjeta.y, 10);
+  assert.deepEqual(tarjeta.boundElements, [{ id: "titulo", type: "text" }]);
+  assert.deepEqual(tarjeta.groupIds, ["grupo-tarjeta"]);
+  assert.equal(titulo.containerId, "tarjeta");
+  assert.deepEqual(titulo.groupIds, ["grupo-tarjeta"]);
+  assert.equal(titulo.y, 30);
+
+  const rechazoBorrado = await client.callTool({
+    name: "patch_elements",
+    arguments: {
+      project: "sistema-de-pedidos",
+      sheet: "pendientes",
+      patches: [{ id: "no-existe", x: 0 }],
+    },
+  });
+  assert.equal(rechazoBorrado.isError, true);
+  assert.match(rechazoBorrado.content[0].text, /inexistente o borrado/);
+
+  const rechazoTextoEnFigura = await client.callTool({
+    name: "patch_elements",
+    arguments: {
+      project: "sistema-de-pedidos",
+      sheet: "pendientes",
+      patches: [{ id: "tarjeta", text: "esto no es texto" }],
+    },
+  });
+  assert.equal(rechazoTextoEnFigura.isError, true);
+  assert.match(rechazoTextoEnFigura.content[0].text, /no acepta el campo text/);
+});

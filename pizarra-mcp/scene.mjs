@@ -336,6 +336,7 @@ export const compactScene = (scene) => ({
       text: element.text,
       containerId: element.containerId,
       boundElements: element.boundElements,
+      groupIds: element.groupIds,
       startBinding: element.startBinding,
       endBinding: element.endBinding,
     })),
