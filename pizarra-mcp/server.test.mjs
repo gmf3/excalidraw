@@ -242,3 +242,162 @@ test("patch_elements mueve y recolorea sin romper containerId/boundElements/grou
   assert.equal(rechazoTextoEnFigura.isError, true);
   assert.match(rechazoTextoEnFigura.content[0].text, /no acepta el campo text/);
 });
+
+test("bind_elements ata texto a figura, agrupa y liga una flecha, sin mover nada", async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "pizarra-mcp-test-"));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  crearAlmacen(dataDir).crearProyecto("Sistema de pedidos", ["Pendientes"]);
+
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [path.join(here, "server.mjs")],
+    env: {
+      ...process.env,
+      PIZARRA_DATA_DIR: dataDir,
+      PIZARRA_PUBLIC_URL: "https://pizarra.example",
+    },
+    stderr: "pipe",
+  });
+  const client = new Client({ name: "pizarra-mcp-test", version: "1.0.0" });
+  t.after(async () => client.close());
+  await client.connect(transport);
+
+  // Dos nodos (figura + texto SUELTOS, como los deja write_diagram) y una flecha
+  // sin bindear entre ellos: el estado real que dejó este mismo agente en
+  // sistema-de-pedidos/pendientes antes de este fix.
+  const escenaInicial = {
+    type: "excalidraw",
+    version: 2,
+    source: "test",
+    elements: [
+      {
+        id: "nodoA",
+        type: "rectangle",
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 80,
+        groupIds: [],
+        boundElements: [],
+        version: 1,
+        versionNonce: 1,
+        isDeleted: false,
+      },
+      {
+        id: "textoA",
+        type: "text",
+        x: 10,
+        y: 10,
+        width: 100,
+        height: 25,
+        text: "Nodo A",
+        containerId: null,
+        groupIds: [],
+        boundElements: [],
+        version: 1,
+        versionNonce: 1,
+        isDeleted: false,
+      },
+      {
+        id: "nodoB",
+        type: "rectangle",
+        x: 300,
+        y: 0,
+        width: 200,
+        height: 80,
+        groupIds: [],
+        boundElements: [],
+        version: 1,
+        versionNonce: 1,
+        isDeleted: false,
+      },
+      {
+        id: "flecha",
+        type: "arrow",
+        x: 200,
+        y: 40,
+        width: 100,
+        height: 0,
+        points: [
+          [0, 0],
+          [100, 0],
+        ],
+        startBinding: null,
+        endBinding: null,
+        groupIds: [],
+        boundElements: [],
+        version: 1,
+        versionNonce: 1,
+        isDeleted: false,
+      },
+    ],
+    appState: { viewBackgroundColor: "#ffffff" },
+    files: {},
+  };
+  const escrita = await client.callTool({
+    name: "write_scene",
+    arguments: {
+      project: "sistema-de-pedidos",
+      sheet: "pendientes",
+      scene: JSON.stringify(escenaInicial),
+    },
+  });
+  assert.equal(escrita.isError, undefined);
+
+  const bound = await client.callTool({
+    name: "bind_elements",
+    arguments: {
+      project: "sistema-de-pedidos",
+      sheet: "pendientes",
+      contain: [{ container: "nodoA", text: "textoA" }],
+      group: [{ ids: ["nodoA", "textoA"], group_id: "grupo-a" }],
+      arrow_bind: [{ arrow: "flecha", end: "end", target: "nodoB" }],
+    },
+  });
+  assert.equal(bound.isError, undefined);
+  const resultado = JSON.parse(bound.content[0].text);
+  assert.deepEqual(resultado.applied, { contain: 1, group: 1, arrow_bind: 1 });
+
+  const releida = await client.callTool({
+    name: "read_sheet",
+    arguments: { project: "sistema-de-pedidos", sheet: "pendientes", full: true },
+  });
+  const escena = JSON.parse(releida.content[0].text).scene;
+  const nodoA = escena.elements.find((el) => el.id === "nodoA");
+  const textoA = escena.elements.find((el) => el.id === "textoA");
+  const nodoB = escena.elements.find((el) => el.id === "nodoB");
+  const flecha = escena.elements.find((el) => el.id === "flecha");
+
+  assert.equal(textoA.containerId, "nodoA");
+  assert.deepEqual(nodoA.boundElements, [{ id: "textoA", type: "text" }]);
+  assert.deepEqual(nodoA.groupIds, ["grupo-a"]);
+  assert.deepEqual(textoA.groupIds, ["grupo-a"]);
+  assert.equal(flecha.endBinding.elementId, "nodoB");
+  assert.deepEqual(nodoB.boundElements, [{ id: "flecha", type: "arrow" }]);
+  // Nada de posicion, tamano ni color cambio.
+  assert.equal(nodoA.x, 0);
+  assert.equal(textoA.x, 10);
+  assert.equal(nodoB.x, 300);
+
+  const rechazoInexistente = await client.callTool({
+    name: "bind_elements",
+    arguments: {
+      project: "sistema-de-pedidos",
+      sheet: "pendientes",
+      contain: [{ container: "nodoA", text: "no-existe" }],
+    },
+  });
+  assert.equal(rechazoInexistente.isError, true);
+  assert.match(rechazoInexistente.content[0].text, /inexistente o borrado/);
+
+  const rechazoNoTexto = await client.callTool({
+    name: "bind_elements",
+    arguments: {
+      project: "sistema-de-pedidos",
+      sheet: "pendientes",
+      contain: [{ container: "nodoA", text: "nodoB" }],
+    },
+  });
+  assert.equal(rechazoNoTexto.isError, true);
+  assert.match(rechazoNoTexto.content[0].text, /no es un elemento de texto/);
+});

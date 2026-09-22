@@ -471,6 +471,159 @@ server.registerTool(
   },
 );
 
+const soloTexto = (element, campo) => {
+  if (!element || element.isDeleted) {
+    throw new Error(`Elemento inexistente o borrado: ${campo}`);
+  }
+  return element;
+};
+
+server.registerTool(
+  "bind_elements",
+  {
+    description:
+      "Crea relaciones NATIVAS de Excalidraw entre elementos que YA EXISTEN, sin mover ni recolorear nada: texto dentro de una figura (containerId/boundElements, como cuando escribis adentro de un rectangulo en la app), agrupar varios elementos para que se arrastren juntos (groupIds), o atar un extremo de flecha a una figura para que la siga si se mueve (startBinding/endBinding). Usala despues de crear elementos con write_diagram/write_scene cuando quieras que un nodo (figura + texto + flechas que le llegan) se comporte como un solo bloque en la app, igual que un elemento armado a mano.",
+    inputSchema: z.object({
+      project: z.string(),
+      sheet: z.string(),
+      expected_etag: z.string().optional(),
+      contain: z
+        .array(z.object({ container: z.string(), text: z.string() }))
+        .optional(),
+      group: z
+        .array(
+          z.object({
+            ids: z.array(z.string()).min(2),
+            group_id: z.string().optional(),
+          }),
+        )
+        .optional(),
+      arrow_bind: z
+        .array(
+          z.object({
+            arrow: z.string(),
+            end: z.enum(["start", "end"]),
+            target: z.string(),
+            fixed_point: z
+              .tuple([z.number(), z.number()])
+              .optional()
+              .default([0.5, 0.5]),
+          }),
+        )
+        .optional(),
+    }).refine(
+      (v) =>
+        (v.contain?.length ?? 0) +
+          (v.group?.length ?? 0) +
+          (v.arrow_bind?.length ?? 0) >
+        0,
+      { message: "pasa al menos un contain, group o arrow_bind" },
+    ),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  async ({
+    project: projectId,
+    sheet: sheetId,
+    expected_etag: expectedEtag,
+    contain,
+    group,
+    arrow_bind: arrowBind,
+  }) => {
+    try {
+      const current = readScene(projectId, sheetId);
+      if (expectedEtag && expectedEtag !== current.etag) {
+        throw new Error(`ETag desactualizado. Actual: ${current.etag}`);
+      }
+      const porId = new Map(
+        current.scene.elements.map((element) => [element.id, element]),
+      );
+      const tocar = (element) => {
+        element.version += 1;
+        element.versionNonce = crypto.randomInt(1, 2_147_483_647);
+        element.updated = Date.now();
+      };
+      const anotados = { contain: 0, group: 0, arrow_bind: 0 };
+
+      for (const { container: containerId, text: textId } of contain ?? []) {
+        const containerEl = soloTexto(porId.get(containerId), containerId);
+        const textEl = soloTexto(porId.get(textId), textId);
+        if (textEl.type !== "text") {
+          throw new Error(`${textId} no es un elemento de texto`);
+        }
+        if (["arrow", "line"].includes(containerEl.type)) {
+          throw new Error(
+            `${containerId} es una flecha/linea: usa arrow_bind, no contain`,
+          );
+        }
+        textEl.containerId = containerEl.id;
+        if (!containerEl.boundElements.some((b) => b.id === textEl.id)) {
+          containerEl.boundElements.push({ id: textEl.id, type: "text" });
+        }
+        tocar(textEl);
+        tocar(containerEl);
+        anotados.contain += 1;
+      }
+
+      for (const { ids, group_id: groupIdIn } of group ?? []) {
+        const groupId = groupIdIn || crypto.randomBytes(12).toString("base64url");
+        for (const elId of ids) {
+          const element = soloTexto(porId.get(elId), elId);
+          if (!element.groupIds.includes(groupId)) {
+            element.groupIds.push(groupId);
+            tocar(element);
+          }
+        }
+        anotados.group += 1;
+      }
+
+      for (const {
+        arrow: arrowId,
+        end,
+        target: targetId,
+        fixed_point: fixedPoint,
+      } of arrowBind ?? []) {
+        const arrowEl = soloTexto(porId.get(arrowId), arrowId);
+        if (!["arrow", "line"].includes(arrowEl.type)) {
+          throw new Error(`${arrowId} no es una flecha ni una linea`);
+        }
+        const targetEl = soloTexto(porId.get(targetId), targetId);
+        const campo = end === "start" ? "startBinding" : "endBinding";
+        arrowEl[campo] = {
+          elementId: targetEl.id,
+          focus: 0,
+          gap: 4,
+          fixedPoint,
+        };
+        if (!targetEl.boundElements.some((b) => b.id === arrowEl.id)) {
+          targetEl.boundElements.push({ id: arrowEl.id, type: arrowEl.type });
+        }
+        tocar(arrowEl);
+        tocar(targetEl);
+        anotados.arrow_bind += 1;
+      }
+
+      const next = { ...current.scene, source: "pizarra-mcp" };
+      const { etag } = almacen.guardarHoja(
+        projectId,
+        sheetId,
+        JSON.stringify(next, null, 2),
+        current.etag,
+      );
+      const response = {
+        ok: true,
+        project: projectId,
+        sheet: sheetId,
+        applied: anotados,
+        etag,
+        url: urlFor(projectId, sheetId),
+      };
+      return textResult(response, response);
+    } catch (error) {
+      return fail(error);
+    }
+  },
+);
+
 server.registerTool(
   "rename_sheet",
   {
