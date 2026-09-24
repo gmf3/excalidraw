@@ -162,6 +162,7 @@ test("patch_elements mueve y recolorea sin romper containerId/boundElements/grou
         width: 180,
         height: 25,
         text: "T080-011",
+        originalText: "T080-011",
         containerId: "tarjeta",
         groupIds: ["grupo-tarjeta"],
         boundElements: [],
@@ -212,6 +213,11 @@ test("patch_elements mueve y recolorea sin romper containerId/boundElements/grou
   assert.equal(tarjeta.backgroundColor, "#dcfce7");
   assert.equal(titulo.x, 310);
   assert.equal(titulo.text, "T080-011 (listo)");
+  assert.equal(
+    titulo.originalText,
+    "T080-011 (listo)",
+    "originalText acompaña a text: si no, editar o redimensionar en la app vuelve al texto viejo",
+  );
   // Lo que NO se pidió tocar sigue byte a byte igual: el binding nativo sobrevive.
   assert.equal(tarjeta.y, 10);
   assert.deepEqual(tarjeta.boundElements, [{ id: "titulo", type: "text" }]);

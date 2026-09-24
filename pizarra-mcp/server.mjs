@@ -444,6 +444,12 @@ server.registerTool(
             element[campo] = patch[campo];
           }
         }
+        // Excalidraw re-envuelve y abre el editor desde originalText, no desde
+        // text: si queda el valor viejo, doble clic o redimensionar la figura
+        // devuelve el texto anterior.
+        if (patch.text !== undefined) {
+          element.originalText = patch.text;
+        }
         element.version += 1;
         element.versionNonce = crypto.randomInt(1, 2_147_483_647);
         element.updated = Date.now();
